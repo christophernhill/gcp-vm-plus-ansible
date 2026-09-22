@@ -12,6 +12,8 @@ config/vm.yaml               all tunable settings (project, zone, machine
                              type, disk, image, SSH key, allowed CIDRs)
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
+provisioning/                material that runs on the VM after apply:
+                             setup0.sh (admin accounts), keys/ (public keys)
 build/                       generated main.tf lands here (gitignored)
 ```
 
@@ -35,6 +37,22 @@ Note: OpenTofu state is local (`build/terraform.tfstate`, gitignored) —
 there is no remote backend, so the machine that ran `apply` owns the
 deployment. Re-run the generator after any change to `config/vm.yaml`
 or the template, then `tofu -chdir=build apply` to reconcile.
+
+## Provisioning the VM
+
+`provisioning/setup0.sh` creates the admin accounts (`lincolnb`,
+`tloizou`) with sudo privileges and SSH-key-only access: passwords are
+locked, and each account's `provisioning/keys/<username>.pub` becomes
+its `authorized_keys`. Drop the public keys in `provisioning/keys/`
+first (see the README there), then:
+
+```sh
+IP=$(tofu -chdir=build output -raw public_ip)
+scp -r provisioning rocky@"$IP":
+ssh rocky@"$IP" 'sudo bash provisioning/setup0.sh'
+```
+
+The script is idempotent — re-run it after adding or rotating keys.
 
 ## Google Cloud authentication
 

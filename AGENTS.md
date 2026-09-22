@@ -23,6 +23,7 @@ with `tofu`.
 | `config/vm.yaml` | Single source of truth for all settings |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
+| `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
 
@@ -87,10 +88,16 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   Engine.
 - `vm.ssh_public_key_file` points at `~/.ssh/gce_cf_key.pub`, which is
   specific to the original author's machine.
+- Initial provisioning is a shell script, `provisioning/setup0.sh`
+  (admin accounts lincolnb + tloizou, sudo via wheel + NOPASSWD
+  drop-in, locked passwords so SSH keys are the only way in). It has
+  **not been run yet** — it needs the users' public keys dropped into
+  `provisioning/keys/<username>.pub` first, and it refuses to run
+  without them.
 - The repo is named `gcp-vm-plus-ansible`: **Ansible provisioning is
   the intended next phase but does not exist yet.** The tofu outputs
   (`public_ip`, `ssh_command`) were designed as the inventory inputs
-  for it.
+  for it; setup0.sh is expected to be absorbed into Ansible eventually.
 
 ## Conventions
 
