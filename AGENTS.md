@@ -72,14 +72,21 @@ negative test is: point `--config` at a copy of `vm.yaml` with
 
 ## Current state / known gaps (as of 2026-09-22)
 
-- `gcp.project_id` is still the placeholder `my-gcp-project`; the
-  generator warns about it. Nothing has been deployed yet.
+- **The VM is deployed.** `gcp.project_id` is set to the real project
+  (`orcd-dr`) and `tofu apply` has created the network, firewall rule,
+  and instance. OpenTofu state lives only in `build/terraform.tfstate`
+  on the original author's machine (local state, gitignored — there is
+  no remote backend). From a fresh clone, do not `apply` without first
+  recovering that state or importing the existing resources, or you
+  will create duplicates.
+- Auth on the dev machine is working: gcloud CLI installed, ADC
+  configured via `gcloud auth application-default login`. The provider
+  block has no `credentials` field on purpose — it discovers ADC. See
+  the README's "Google Cloud authentication" section, including the
+  consent-checkbox gotcha. GCP "API keys" do not work for Compute
+  Engine.
 - `vm.ssh_public_key_file` points at `~/.ssh/gce_cf_key.pub`, which is
   specific to the original author's machine.
-- `gcloud` was not installed on the dev machine. Auth plan is
-  Application Default Credentials (`gcloud auth application-default
-  login`) — the provider block has no `credentials` field on purpose.
-  GCP "API keys" do not work for Compute Engine.
 - The repo is named `gcp-vm-plus-ansible`: **Ansible provisioning is
   the intended next phase but does not exist yet.** The tofu outputs
   (`public_ip`, `ssh_command`) were designed as the inventory inputs
@@ -87,6 +94,11 @@ negative test is: point `--config` at a copy of `vm.yaml` with
 
 ## Conventions
 
+- **Keep the documentation up to date.** Any change to code,
+  configuration, workflow, or deployment state must be reflected in
+  `README.md` and this file in the same commit. Treat stale docs as a
+  bug; refresh the "as of" date on the current-state section above
+  whenever you revise it.
 - Commit messages: meaningful summary + body, and the body must include
   "Assisted by AI." (user requirement). AI-authored commits also carry a
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` trailer.

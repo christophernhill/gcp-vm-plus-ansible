@@ -19,7 +19,8 @@ build/                       generated main.tf lands here (gitignored)
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-# edit config/vm.yaml (at minimum: gcp.project_id and the SSH key)
+# edit config/vm.yaml — gcp.project_id and the SSH key are set for the
+# author's environment; change them for yours
 .venv/bin/python generator/generate.py
 tofu -chdir=build init
 tofu -chdir=build apply
@@ -29,6 +30,11 @@ The generator enforces the guardrails: it fails if the machine type has
 less than `vm.min_memory_gb` (default 64) or the boot disk is under 250 GB.
 
 Outputs after `apply`: the VM's public IP and a ready-to-paste `ssh` command.
+
+Note: OpenTofu state is local (`build/terraform.tfstate`, gitignored) —
+there is no remote backend, so the machine that ran `apply` owns the
+deployment. Re-run the generator after any change to `config/vm.yaml`
+or the template, then `tofu -chdir=build apply` to reconcile.
 
 ## Google Cloud authentication
 
