@@ -2,7 +2,7 @@
 # Edit these values, then run: python3 generator/generate.py
 
 gcp:
-  project_id: my-gcp-project        # <-- change to your GCP project ID
+  project_id: orcd-dr
   region: us-central1
   zone: us-central1-a
 
