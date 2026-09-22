@@ -1,0 +1,31 @@
+# Settings for the Rocky Linux 10 VM on GCP.
+# Edit these values, then run: python3 generator/generate.py
+
+gcp:
+  project_id: my-gcp-project        # <-- change to your GCP project ID
+  region: us-central1
+  zone: us-central1-a
+
+network:
+  name: rocky10-net
+  # CIDRs allowed to reach SSH. 0.0.0.0/0 = open internet.
+  # GCP VPCs deny all other ingress by default, so SSH is the only open port.
+  ssh_source_ranges:
+    - 0.0.0.0/0
+
+vm:
+  name: rocky10-vm
+  # n2-standard-16 = 16 vCPU / 64 GB RAM. The generator refuses machine
+  # types it can determine to have less than min_memory_gb.
+  machine_type: n2-standard-16
+  min_memory_gb: 64
+  boot_disk_gb: 250
+  boot_disk_type: pd-balanced       # pd-standard | pd-balanced | pd-ssd
+  image:
+    project: rocky-linux-cloud
+    family: rocky-linux-10
+  ssh_user: rocky
+  # Public key injected into the VM's metadata. Either give a file path...
+  ssh_public_key_file: ~/.ssh/gce_cf_key.pub
+  # ...or paste the key inline (takes precedence over the file if set):
+  # ssh_public_key: "ssh-ed25519 AAAA... user@host"
