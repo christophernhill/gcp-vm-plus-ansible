@@ -30,7 +30,13 @@ vm:
     project: rocky-linux-cloud
     family: rocky-linux-10
   ssh_user: rocky
-  # Public key injected into the VM's metadata. Either give a file path...
+  # Public keys injected into the VM's metadata for ssh_user. All three
+  # sources below are merged (duplicates dropped); at least one key must
+  # come from somewhere.
+  # A file of initial keys, one per line (authorized_keys format;
+  # blank lines and # comments ignored). Relative to the repo root:
+  ssh_public_keys_file: config/rocky_authorized_keys
+  # A single-key file...
   ssh_public_key_file: ~/.ssh/gce_cf_key.pub
-  # ...or paste the key inline (takes precedence over the file if set):
+  # ...or a key pasted inline:
   # ssh_public_key: "ssh-ed25519 AAAA... user@host"

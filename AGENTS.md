@@ -21,6 +21,7 @@ with `tofu`.
 | Path | Role |
 |---|---|
 | `config/vm.yaml` | Single source of truth for all settings |
+| `config/rocky_authorized_keys` | Initial public keys for the base login (`rocky`), one per line |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `keys/` holds users' public keys |
@@ -46,7 +47,11 @@ with `tofu`.
   for names it can't parse. Disk has a hard 250 GB floor.
 - **Image is a family reference** (`rocky-linux-cloud/rocky-linux-10`)
   so it tracks the latest Rocky 10 release automatically.
-- SSH key goes in via instance metadata (`ssh-keys`), not OS Login.
+- SSH keys go in via instance metadata (`ssh-keys`), not OS Login. Keys
+  for the base login are merged from three `vm.*` sources
+  (`ssh_public_key` inline, `ssh_public_key_file` single-key file,
+  `ssh_public_keys_file` multi-key file — default
+  `config/rocky_authorized_keys`), deduplicated, at least one required.
 - **Extra external IPv4s use protocol forwarding, not extra NICs.**
   `vm.external_ip_count` (1–8, default 1) controls the total; the first
   is the NIC's ephemeral IP, the rest are reserved `google_compute_address`es

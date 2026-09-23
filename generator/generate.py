@@ -23,6 +23,9 @@ MACHINE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*-(standard|highmem|highcpu)-(\d+)$
 # Cap on vm.external_ip_count (NIC IP + protocol-forwarded extras).
 MAX_EXTERNAL_IPS = 8
 
+# OpenSSH public-key line: key type, base64 blob, optional comment.
+PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECASE)
+
 REQUIRED_KEYS = [
     ("gcp", "project_id"),
     ("gcp", "region"),
@@ -102,17 +105,46 @@ def validate(cfg: dict) -> None:
         fail("network.ssh_source_ranges must list at least one CIDR")
 
 
-def resolve_ssh_public_key(vm: dict) -> str:
-    key = vm.get("ssh_public_key")
-    if key:
-        return key.strip()
-    key_file = vm.get("ssh_public_key_file")
-    if not key_file:
-        fail("set vm.ssh_public_key or vm.ssh_public_key_file")
-    path = Path(key_file).expanduser()
-    if not path.is_file():
-        fail(f"ssh public key file not found: {path}")
-    return path.read_text().strip()
+def key_file_path(setting: str) -> Path:
+    """Expand ~ and resolve relative paths against the repo root."""
+    path = Path(setting).expanduser()
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def resolve_ssh_public_keys(vm: dict) -> list[str]:
+    """Merge keys from all configured sources, in order, deduplicated."""
+    keys: list[str] = []
+
+    inline = vm.get("ssh_public_key")
+    if inline:
+        keys.append(inline.strip())
+
+    for setting, multi in [("ssh_public_key_file", False),
+                           ("ssh_public_keys_file", True)]:
+        if not vm.get(setting):
+            continue
+        path = key_file_path(vm[setting])
+        if not path.is_file():
+            fail(f"vm.{setting}: file not found: {path}")
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            keys.append(line)
+            if not multi:
+                break
+
+    for key in keys:
+        if not PUBLIC_KEY_RE.match(key):
+            fail(f"this does not look like an OpenSSH public key: {key!r}")
+
+    deduped = list(dict.fromkeys(keys))
+    if not deduped:
+        fail(
+            "no SSH public keys found: set vm.ssh_public_key, "
+            "vm.ssh_public_key_file, or add keys to vm.ssh_public_keys_file"
+        )
+    return deduped
 
 
 def render(cfg: dict, out_dir: Path) -> Path:
@@ -122,7 +154,7 @@ def render(cfg: dict, out_dir: Path) -> Path:
         keep_trailing_newline=True,
     )
     hcl = env.get_template("main.tf.j2").render(
-        **cfg, ssh_public_key=resolve_ssh_public_key(cfg["vm"])
+        **cfg, ssh_public_keys=resolve_ssh_public_keys(cfg["vm"])
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "main.tf"

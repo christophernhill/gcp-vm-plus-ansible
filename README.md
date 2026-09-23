@@ -9,7 +9,10 @@ ingress by default).
 
 ```
 config/vm.yaml               all tunable settings (project, zone, machine
-                             type, disk, image, SSH key, allowed CIDRs)
+                             type, disk, image, SSH keys, external IP
+                             count, allowed CIDRs)
+config/rocky_authorized_keys initial public keys for the base login
+                             ("rocky"), one per line
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
 provisioning/                material that runs on the VM after apply:
@@ -45,6 +48,21 @@ protocol `L3_DEFAULT`). The google-guest-agent shipped in the Rocky
 image adds local routes for the forwarded addresses automatically, and
 the VPC firewall applies to them like any other traffic — SSH stays the
 only open port on every address.
+
+## SSH keys for the base login
+
+The keys that can log in as `rocky` come from three merged sources in
+`config/vm.yaml` (duplicates removed; at least one key is required):
+
+- `vm.ssh_public_keys_file` — a file of initial keys, one per line in
+  `authorized_keys` format (blank lines and `#` comments ignored);
+  defaults to `config/rocky_authorized_keys`
+- `vm.ssh_public_key_file` — a single-key file
+- `vm.ssh_public_key` — a key pasted inline
+
+They are injected via the instance's `ssh-keys` metadata, so re-running
+the generator and `tofu apply` after editing keys updates the VM in
+place.
 
 Note: OpenTofu state is local (`build/terraform.tfstate`, gitignored) —
 there is no remote backend, so the machine that ran `apply` owns the

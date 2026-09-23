@@ -56,7 +56,7 @@ resource "google_compute_instance" "vm" {
   }
 
   metadata = {
-    ssh-keys = "{{ vm.ssh_user }}:{{ ssh_public_key }}"
+    ssh-keys = "{% for key in ssh_public_keys %}{{ vm.ssh_user }}:{{ key }}{{ '\\n' if not loop.last }}{% endfor %}"
   }
 }
 {% if vm.external_ip_count > 1 %}
