@@ -24,8 +24,15 @@ vm:
   # Total external IPv4 addresses on the VM, 1-8. The first is the NIC's
   # ephemeral IP; each extra one is a reserved static IP routed to the
   # same NIC via GCP protocol forwarding (the firewall still applies, so
-  # SSH remains the only open port on every address).
+  # SSH remains the only open port on every address). These do NOT show
+  # up as interfaces in `ip a` — for that, see nic_count below.
   external_ip_count: 4
+  # Number of network interfaces (vNICs), 1-8, each visible in `ip a`
+  # with its own subnet (10.10.<i>.0/24) and its own external IP.
+  # WARNING: changing this replaces the VM (NICs are fixed at creation),
+  # and with >1 the VPC switches from auto to custom subnets, which
+  # replaces the network too. Meant for new VMs, not the deployed one.
+  nic_count: 1
   image:
     project: rocky-linux-cloud
     family: rocky-linux-10

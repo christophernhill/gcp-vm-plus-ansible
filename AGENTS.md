@@ -24,6 +24,7 @@ with `tofu`.
 | `config/rocky_authorized_keys` | Initial public keys for the base login (`rocky`), one per line |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
+| `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
@@ -63,6 +64,18 @@ with `tofu`.
   google-guest-agent auto-installs local routes for forwarded IPs.
   With the default count of 1, the rendered HCL has no forwarding
   resources at all.
+- **Real extra NICs are a separate knob, `vm.nic_count`** (1–8, default
+  1), for VMs that must show N interfaces in `ip a`. With count > 1 the
+  VPC flips to `auto_create_subnetworks = false` with one
+  `google_compute_subnetwork` (`10.10.<i>.0/24`) per NIC — GCP permits
+  same-VPC multi-NIC when every NIC has a unique subnet and nic0 is on
+  that VPC — so the one-VPC/one-firewall-rule security model holds.
+  `policy-routing.sh` goes in as startup-script metadata so replies to
+  traffic on secondary NICs use the right interface (the script must
+  never contain a dollar-brace, or the HCL heredoc interpolates it).
+  Changing nic_count replaces the VM and the network; with count 1 the
+  render is identical to the single-NIC original. Orthogonal to
+  external_ip_count (forwarded IPs always target nic0).
 
 ## Commands
 
@@ -107,6 +120,11 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   (`rocky10-vm-ip-2/3/4` via `rocky10-vm-fwd-2/3/4`). After apply, the
   extra IPs can take a minute or two to open for SSH while the guest
   agent installs routes.
+- `vm.nic_count` is 1 on the deployed VM and must stay 1 there
+  (changing it forces replacement). Multi-NIC has passed
+  `tofu validate` but has **never been applied to a real VM** — the
+  first 4-NIC VM (via a second config + `--out build2`) will be the
+  real test, especially of `policy-routing.sh`.
 - **Unmanaged stragglers exist in the project**: a hand-made
   `rocky10-vm-second-ip` (34.57.137.79) + `rocky10-vm-fwd-rule` predate
   the generated forwarding rules and give the VM a fifth external IP

@@ -18,9 +18,19 @@ provider "google" {
 
 resource "google_compute_network" "vpc" {
   name                    = "{{ network.name }}"
-  auto_create_subnetworks = true
+  auto_create_subnetworks = {{ "false" if vm.nic_count > 1 else "true" }}
 }
-
+{% if vm.nic_count > 1 %}
+# One subnet per NIC: GCP requires each interface on a unique subnet
+# (they may share the VPC as long as nic0 is attached to it too).
+resource "google_compute_subnetwork" "subnet" {
+  count         = {{ vm.nic_count }}
+  name          = "{{ network.name }}-subnet-${count.index}"
+  network       = google_compute_network.vpc.self_link
+  region        = "{{ gcp.region }}"
+  ip_cidr_range = "10.10.${count.index}.0/24"
+}
+{% endif %}
 # GCP VPCs deny all ingress by default, so this is the only inbound path.
 resource "google_compute_firewall" "allow_ssh" {
   name      = "{{ network.name }}-allow-ssh"
@@ -49,14 +59,28 @@ resource "google_compute_instance" "vm" {
       type  = "{{ vm.boot_disk_type }}"
     }
   }
-
+{% if vm.nic_count > 1 %}
+{%- for i in range(vm.nic_count) %}
+  network_interface {
+    subnetwork = google_compute_subnetwork.subnet[{{ i }}].self_link
+    access_config {} # ephemeral public IP
+  }
+{% endfor %}
+{%- else %}
   network_interface {
     network = google_compute_network.vpc.self_link
     access_config {} # ephemeral public IP
   }
-
+{% endif %}
   metadata = {
+{%- if vm.nic_count > 1 %}
+    ssh-keys       = "{% for key in ssh_public_keys %}{{ vm.ssh_user }}:{{ key }}{{ '\\n' if not loop.last }}{% endfor %}"
+    startup-script = <<-EOT
+{{ startup_script | indent(6, true, true) }}
+    EOT
+{%- else %}
     ssh-keys = "{% for key in ssh_public_keys %}{{ vm.ssh_user }}:{{ key }}{{ '\\n' if not loop.last }}{% endfor %}"
+{%- endif %}
   }
 }
 {% if vm.external_ip_count > 1 %}
@@ -92,13 +116,13 @@ output "public_ip" {
 {% if vm.external_ip_count > 1 %}
 output "public_ips" {
   value = concat(
-    [google_compute_instance.vm.network_interface[0].access_config[0].nat_ip],
+    [for nic in google_compute_instance.vm.network_interface : nic.access_config[0].nat_ip],
     google_compute_address.extra[*].address
   )
 }
 {% else %}
 output "public_ips" {
-  value = [google_compute_instance.vm.network_interface[0].access_config[0].nat_ip]
+  value = [for nic in google_compute_instance.vm.network_interface : nic.access_config[0].nat_ip]
 }
 {% endif %}
 output "ssh_command" {

@@ -23,6 +23,10 @@ MACHINE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*-(standard|highmem|highcpu)-(\d+)$
 # Cap on vm.external_ip_count (NIC IP + protocol-forwarded extras).
 MAX_EXTERNAL_IPS = 8
 
+# Cap on vm.nic_count. GCP allows up to 10 vNICs (fewer on small
+# machine types: 2-10 vCPUs get one vNIC per vCPU).
+MAX_NICS = 8
+
 # OpenSSH public-key line: key type, base64 blob, optional comment.
 PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECASE)
 
@@ -95,6 +99,22 @@ def validate(cfg: dict) -> None:
             f"must be an integer between 1 and {MAX_EXTERNAL_IPS}"
         )
 
+    nic_count = vm.setdefault("nic_count", 1)
+    if (
+        isinstance(nic_count, bool)
+        or not isinstance(nic_count, int)
+        or not 1 <= nic_count <= MAX_NICS
+    ):
+        fail(
+            f"vm.nic_count is {nic_count!r}; "
+            f"must be an integer between 1 and {MAX_NICS}"
+        )
+    if match and nic_count > int(match.group(2)):
+        fail(
+            f"vm.nic_count is {nic_count}, but {machine_type} has only "
+            f"{match.group(2)} vCPUs (GCP allows at most one vNIC per vCPU)"
+        )
+
     if cfg["gcp"]["project_id"] == "my-gcp-project":
         print(
             "warning: gcp.project_id is still the placeholder 'my-gcp-project'",
@@ -154,7 +174,9 @@ def render(cfg: dict, out_dir: Path) -> Path:
         keep_trailing_newline=True,
     )
     hcl = env.get_template("main.tf.j2").render(
-        **cfg, ssh_public_keys=resolve_ssh_public_keys(cfg["vm"])
+        **cfg,
+        ssh_public_keys=resolve_ssh_public_keys(cfg["vm"]),
+        startup_script=(TEMPLATE_DIR / "policy-routing.sh").read_text().rstrip(),
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "main.tf"

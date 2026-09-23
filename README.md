@@ -49,6 +49,44 @@ image adds local routes for the forwarded addresses automatically, and
 the VPC firewall applies to them like any other traffic — SSH stays the
 only open port on every address.
 
+Note these forwarded addresses do **not** appear as interfaces in
+`ip a` on the VM — they land on the one NIC. If you want actual extra
+NICs, use `vm.nic_count` instead (next section); the two knobs are
+independent and can be combined.
+
+## Multiple NICs
+
+Set `vm.nic_count` (1–8, default 1) to give the VM that many network
+interfaces, each visible in `ip a` with its own internal subnet
+(`10.10.<i>.0/24`) and its own ephemeral external IP. With a count
+above 1 the VPC switches from auto-created subnets to one explicit
+subnet per NIC — GCP allows NICs to share a VPC as long as each has a
+unique subnet — so the single-VPC/default-deny security model is
+unchanged, and the one SSH firewall rule covers every NIC. A
+startup-script (`generator/templates/policy-routing.sh`) is injected
+into the instance metadata to set up source-based policy routing at
+each boot, so inbound connections to the secondary NICs' external IPs
+get their replies out of the right interface.
+
+Two caveats: the NIC count is fixed at instance creation, so changing
+it **replaces the VM** (and the network, because of the subnet-mode
+switch) — use it for new VMs, not the deployed one; and GCP allows at
+most one vNIC per vCPU (the generator checks this when it can parse
+the machine type).
+
+## Running a second VM
+
+The generator takes `--config` and `--out`, and each output directory
+carries its own OpenTofu state, so a second VM is a second config:
+
+```sh
+cp config/vm.yaml config/vm2.yaml
+# edit vm2.yaml: change vm.name and network.name (must not collide),
+# e.g. set nic_count: 4 for a 4-NIC machine
+.venv/bin/python generator/generate.py --config config/vm2.yaml --out build2
+tofu -chdir=build2 init && tofu -chdir=build2 apply
+```
+
 ## SSH keys for the base login
 
 The keys that can log in as `rocky` come from three merged sources in
