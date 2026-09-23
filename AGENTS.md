@@ -87,7 +87,7 @@ guardrails plus `tofu validate`. If you change validation logic, a quick
 negative test is: point `--config` at a copy of `vm.yaml` with
 `machine_type: e2-standard-8` and confirm it exits non-zero.
 
-## Current state / known gaps (as of 2026-09-22)
+## Current state / known gaps (as of 2026-09-23)
 
 - **The VM is deployed.** `gcp.project_id` is set to the real project
   (`orcd-dr`) and `tofu apply` has created the network, firewall rule,
@@ -96,6 +96,23 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   no remote backend). From a fresh clone, do not `apply` without first
   recovering that state or importing the existing resources, or you
   will create duplicates.
+- **The state file has already been lost and rebuilt once**
+  (2026-09-23): `build/` was deleted, a later `apply` hit 409
+  "already exists" errors, and the fix was `tofu import` of the
+  network, firewall, instance, and target instance into a fresh state,
+  followed by a clean apply. If you see 409s on apply, suspect missing
+  state and import — never delete the GCP resources to "unblock".
+- `vm.external_ip_count` is 4 and applied: the VM answers on its
+  ephemeral NIC IP plus three reserved static IPs
+  (`rocky10-vm-ip-2/3/4` via `rocky10-vm-fwd-2/3/4`). After apply, the
+  extra IPs can take a minute or two to open for SSH while the guest
+  agent installs routes.
+- **Unmanaged stragglers exist in the project**: a hand-made
+  `rocky10-vm-second-ip` (34.57.137.79) + `rocky10-vm-fwd-rule` predate
+  the generated forwarding rules and give the VM a fifth external IP
+  outside tofu's control. The target instance they share
+  (`rocky10-vm-target`) IS imported/managed. Ask the user before
+  deleting the pair — releasing the address is irreversible.
 - Auth on the dev machine is working: gcloud CLI installed, ADC
   configured via `gcloud auth application-default login`. The provider
   block has no `credentials` field on purpose — it discovers ADC. See
@@ -104,6 +121,8 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   Engine.
 - `vm.ssh_public_key_file` points at `~/.ssh/gce_cf_key.pub`, which is
   specific to the original author's machine.
+  `config/rocky_authorized_keys` holds two more keys (lincolnb,
+  thekla); all three are deployed in the instance's ssh-keys metadata.
 - Initial provisioning is a shell script, `provisioning/setup0.sh`
   (admin accounts lincolnb + tloizou, sudo via wheel + NOPASSWD
   drop-in, locked passwords so SSH keys are the only way in). It has
