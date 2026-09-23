@@ -31,7 +31,20 @@ tofu -chdir=build apply
 The generator enforces the guardrails: it fails if the machine type has
 less than `vm.min_memory_gb` (default 64) or the boot disk is under 250 GB.
 
-Outputs after `apply`: the VM's public IP and a ready-to-paste `ssh` command.
+Outputs after `apply`: the VM's public IP (`public_ip`), the list of all
+external IPv4 addresses (`public_ips`), and a ready-to-paste `ssh` command.
+
+## Multiple external IPv4 addresses
+
+Set `vm.external_ip_count` (1–8, default 1) to give the VM more than one
+external IPv4 address. The first address is the NIC's ephemeral IP, as
+before; each additional one is a reserved static IP routed to the same
+NIC with GCP protocol forwarding (`google_compute_address` +
+`google_compute_target_instance` + `google_compute_forwarding_rule`,
+protocol `L3_DEFAULT`). The google-guest-agent shipped in the Rocky
+image adds local routes for the forwarded addresses automatically, and
+the VPC firewall applies to them like any other traffic — SSH stays the
+only open port on every address.
 
 Note: OpenTofu state is local (`build/terraform.tfstate`, gitignored) —
 there is no remote backend, so the machine that ran `apply` owns the

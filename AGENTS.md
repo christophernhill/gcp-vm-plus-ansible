@@ -47,6 +47,17 @@ with `tofu`.
 - **Image is a family reference** (`rocky-linux-cloud/rocky-linux-10`)
   so it tracks the latest Rocky 10 release automatically.
 - SSH key goes in via instance metadata (`ssh-keys`), not OS Login.
+- **Extra external IPv4s use protocol forwarding, not extra NICs.**
+  `vm.external_ip_count` (1–8, default 1) controls the total; the first
+  is the NIC's ephemeral IP, the rest are reserved `google_compute_address`es
+  sent to the same NIC via a `google_compute_target_instance` +
+  per-IP `google_compute_forwarding_rule` (`L3_DEFAULT`, all ports).
+  Chosen over multiple NICs because each extra NIC would need its own
+  VPC plus guest policy routing, breaking the one-VPC security model.
+  The VPC firewall filters forwarded traffic too, and the image's
+  google-guest-agent auto-installs local routes for forwarded IPs.
+  With the default count of 1, the rendered HCL has no forwarding
+  resources at all.
 
 ## Commands
 

@@ -20,6 +20,9 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 GB_PER_VCPU = {"standard": 4, "highmem": 8, "highcpu": 1}
 MACHINE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*-(standard|highmem|highcpu)-(\d+)$")
 
+# Cap on vm.external_ip_count (NIC IP + protocol-forwarded extras).
+MAX_EXTERNAL_IPS = 8
+
 REQUIRED_KEYS = [
     ("gcp", "project_id"),
     ("gcp", "region"),
@@ -77,6 +80,17 @@ def validate(cfg: dict) -> None:
 
     if vm["boot_disk_gb"] < 250:
         fail(f"boot_disk_gb is {vm['boot_disk_gb']}, below the required 250")
+
+    ip_count = vm.setdefault("external_ip_count", 1)
+    if (
+        isinstance(ip_count, bool)
+        or not isinstance(ip_count, int)
+        or not 1 <= ip_count <= MAX_EXTERNAL_IPS
+    ):
+        fail(
+            f"vm.external_ip_count is {ip_count!r}; "
+            f"must be an integer between 1 and {MAX_EXTERNAL_IPS}"
+        )
 
     if cfg["gcp"]["project_id"] == "my-gcp-project":
         print(

@@ -59,11 +59,48 @@ resource "google_compute_instance" "vm" {
     ssh-keys = "{{ vm.ssh_user }}:{{ ssh_public_key }}"
   }
 }
+{% if vm.external_ip_count > 1 %}
+# Extra external IPv4 addresses, delivered to the VM's single NIC via
+# protocol forwarding. The google-guest-agent in the image installs
+# local routes for them automatically, and the VPC firewall still
+# applies — SSH stays the only open port on every address.
+resource "google_compute_address" "extra" {
+  count  = {{ vm.external_ip_count - 1 }}
+  name   = "{{ vm.name }}-ip-${count.index + 2}"
+  region = "{{ gcp.region }}"
+}
 
+resource "google_compute_target_instance" "vm" {
+  name     = "{{ vm.name }}-target"
+  zone     = "{{ gcp.zone }}"
+  instance = google_compute_instance.vm.self_link
+}
+
+resource "google_compute_forwarding_rule" "extra" {
+  count       = {{ vm.external_ip_count - 1 }}
+  name        = "{{ vm.name }}-fwd-${count.index + 2}"
+  region      = "{{ gcp.region }}"
+  ip_address  = google_compute_address.extra[count.index].self_link
+  ip_protocol = "L3_DEFAULT"
+  all_ports   = true
+  target      = google_compute_target_instance.vm.self_link
+}
+{% endif %}
 output "public_ip" {
   value = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
 }
-
+{% if vm.external_ip_count > 1 %}
+output "public_ips" {
+  value = concat(
+    [google_compute_instance.vm.network_interface[0].access_config[0].nat_ip],
+    google_compute_address.extra[*].address
+  )
+}
+{% else %}
+output "public_ips" {
+  value = [google_compute_instance.vm.network_interface[0].access_config[0].nat_ip]
+}
+{% endif %}
 output "ssh_command" {
   value = "ssh {{ vm.ssh_user }}@${google_compute_instance.vm.network_interface[0].access_config[0].nat_ip}"
 }
