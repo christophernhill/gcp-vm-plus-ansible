@@ -28,7 +28,7 @@ with `tofu`.
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
-| `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `keys/` holds users' public keys |
+| `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
 
@@ -180,6 +180,13 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   specific to the original author's machine.
   `config/rocky_authorized_keys` holds two more keys (lincolnb,
   thekla); all three are deployed in the instance's ssh-keys metadata.
+- `provisioning/capture.sh` (added 2026-09-25) is a read-only state
+  report — accounts, sudoers, packages installed since an anchor
+  (default: first boot via `/etc/machine-id` mtime), services, timers,
+  sockets, routing, firewall, `/etc`//`/usr/local` changes. Both its
+  rpm/dnf and dpkg paths were smoke-tested in Rocky 9 and Debian 12
+  containers (simulated provisioning detected; anchor override
+  filters correctly), but it has not been run on the live VM.
 - Initial provisioning is a shell script, `provisioning/setup0.sh`
   (admin accounts lincolnb + tloizou, sudo via the detected sudo group
   — wheel on RHEL-family, sudo on Debian-family — + NOPASSWD

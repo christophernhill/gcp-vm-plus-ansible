@@ -21,7 +21,8 @@ config/base_authorized_keys  initial public keys for the base login
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
 provisioning/                material that runs on the VM after apply:
-                             setup0.sh (admin accounts), keys/ (public keys)
+                             setup0.sh (admin accounts), capture.sh
+                             (state report), keys/ (public keys)
 build/                       generated main.tf lands here (gitignored)
 ```
 
@@ -177,6 +178,30 @@ ssh rocky@"$IP" 'sudo bash provisioning/setup0.sh'
 The script is idempotent — re-run it after adding or rotating keys. It
 detects the distro's sudo group at runtime (`wheel` on RHEL-family,
 `sudo` on Debian-family), so it works on every `vm.os` preset.
+
+## Capturing the VM's state
+
+`provisioning/capture.sh` is the read-only counterpart to `setup0.sh`:
+it prints a report of what has been applied, added, started, and
+installed on the VM since provisioning — accounts and their SSH key
+fingerprints, sudoers drop-ins, packages installed since the anchor,
+enabled/running services, timers and cron, listening sockets,
+network/policy-routing state, the local firewall, and files changed
+under `/etc` and `/usr/local`. It modifies nothing:
+
+```sh
+ssh rocky@"$IP" 'sudo bash provisioning/capture.sh' > vm-state.txt
+```
+
+The "since" anchor defaults to the VM's first boot (the mtime of
+`/etc/machine-id`); pass any `date -d`-parsable timestamp to override:
+
+```sh
+ssh rocky@"$IP" 'sudo bash provisioning/capture.sh "2026-09-23 12:00"'
+```
+
+Like `setup0.sh`, it is distro-aware (rpm/dnf vs dpkg) and works on
+every `vm.os` preset.
 
 ## Google Cloud authentication
 
