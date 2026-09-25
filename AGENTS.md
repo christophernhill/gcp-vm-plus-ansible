@@ -168,8 +168,9 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   bug; refresh the "as of" date on the current-state section above
   whenever you revise it.
 - Commit messages: meaningful summary + body, and the body must include
-  "Assisted by AI." (user requirement). AI-authored commits also carry a
-  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` trailer.
+  "Assisted by AI." (user requirement). Do **not** add `Co-Authored-By`
+  or other AI attribution trailers — the user has explicitly declined
+  them (2026-09-25), and the full history was rewritten to remove them.
 - Never commit `build*/`, `*.tfstate`, `.terraform/`, credential JSON
   files, or anything in `config/` outside `config/examples/` —
   `.gitignore` already covers these. Config changes meant for everyone
