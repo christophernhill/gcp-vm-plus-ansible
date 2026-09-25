@@ -2,8 +2,9 @@
 
 Python generator that renders OpenTofu configuration for a VM on GCP
 (Rocky Linux 10 by default — see "Choosing the OS"): 64 GB+ RAM, 250 GB
-boot disk, SSH open to the internet, all other inbound ports closed (the
-VM sits on its own VPC, and GCP VPCs deny ingress by default).
+boot disk, SSH open to the internet, all other inbound ports closed
+unless listed in `network.open_ports` (the VM sits on its own VPC, and
+GCP VPCs deny ingress by default).
 
 ## Layout
 
@@ -12,8 +13,8 @@ config/examples/             committed config templates — copy them into
                              config/ and edit the copies
 config/vm.yaml               all tunable settings (project, zone, machine
                              type, disk, OS, SSH keys, external IP
-                             count, allowed CIDRs); your local copy of the
-                             example, gitignored
+                             count, allowed CIDRs, open ports); your local
+                             copy of the example, gitignored
 config/base_authorized_keys  initial public keys for the base login
                              (vm.ssh_user), one per line; local copy,
                              gitignored
@@ -71,7 +72,24 @@ For any other GCP public image, drop `vm.os` and set `vm.image.project`
 and everything else (firewall, extra IPs, NICs, provisioning) is
 distro-independent.
 
-## Multiple external IPv4 addresses
+## Opening extra ports
+
+By default the firewall admits only SSH. To open more ports to the
+public internet, list them in `network.open_ports`:
+
+```yaml
+network:
+  open_ports: [80, 443, "8000-8100", "udp:51820"]
+```
+
+Each entry is a single port, a `"low-high"` range, or either with a
+`tcp:`/`udp:` prefix — plain entries are TCP. The generator renders one
+extra firewall rule (`<network>-allow-public`) with source
+`0.0.0.0/0`; these ports are always world-reachable, unlike SSH, whose
+sources are governed separately by `network.ssh_source_ranges`. The
+rule targets the VM's tag, so it covers every external IP
+(`vm.external_ip_count`) and every NIC (`vm.nic_count`). An empty or
+absent list renders no extra rule, leaving SSH as the only open port.
 
 Set `vm.external_ip_count` (1–8, default 1) to give the VM more than one
 external IPv4 address. The first address is the NIC's ephemeral IP, as
@@ -80,8 +98,8 @@ NIC with GCP protocol forwarding (`google_compute_address` +
 `google_compute_target_instance` + `google_compute_forwarding_rule`,
 protocol `L3_DEFAULT`). The google-guest-agent shipped in official GCP
 images adds local routes for the forwarded addresses automatically, and
-the VPC firewall applies to them like any other traffic — SSH stays the
-only open port on every address.
+the VPC firewall applies to them like any other traffic — the same
+rules (SSH plus any `network.open_ports`) govern every address.
 
 Note these forwarded addresses do **not** appear as interfaces in
 `ip a` on the VM — they land on the one NIC. If you want actual extra
@@ -96,7 +114,7 @@ interfaces, each visible in `ip a` with its own internal subnet
 above 1 the VPC switches from auto-created subnets to one explicit
 subnet per NIC — GCP allows NICs to share a VPC as long as each has a
 unique subnet — so the single-VPC/default-deny security model is
-unchanged, and the one SSH firewall rule covers every NIC. A
+unchanged, and the same firewall rules cover every NIC. A
 startup-script (`generator/templates/policy-routing.sh`) is injected
 into the instance metadata to set up source-based policy routing at
 each boot, so inbound connections to the secondary NICs' external IPs

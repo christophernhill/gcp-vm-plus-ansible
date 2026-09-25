@@ -43,6 +43,9 @@ MAX_NICS = 8
 # OpenSSH public-key line: key type, base64 blob, optional comment.
 PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECASE)
 
+# network.open_ports entry: optional tcp:/udp: prefix, port or low-high range.
+OPEN_PORT_RE = re.compile(r"^(?:(tcp|udp):)?(\d{1,5})(?:-(\d{1,5}))?$")
+
 REQUIRED_KEYS = [
     ("gcp", "project_id"),
     ("gcp", "region"),
@@ -176,6 +179,40 @@ def validate(cfg: dict) -> None:
     if not cfg["network"]["ssh_source_ranges"]:
         fail("network.ssh_source_ranges must list at least one CIDR")
 
+    parse_open_ports(cfg["network"])
+
+
+def parse_open_ports(network: dict) -> dict:
+    """Group network.open_ports into GCP port strings, keyed by protocol."""
+    entries = network.get("open_ports") or []
+    if not isinstance(entries, list):
+        fail("network.open_ports must be a list of ports")
+
+    by_proto = {"tcp": [], "udp": []}
+    for entry in entries:
+        if isinstance(entry, int) and not isinstance(entry, bool):
+            proto, low, high = "tcp", entry, None
+        else:
+            match = OPEN_PORT_RE.match(str(entry).strip())
+            if not isinstance(entry, str) or not match:
+                fail(
+                    f"network.open_ports entry {entry!r} must be a port, a "
+                    "low-high range, or either with a tcp:/udp: prefix"
+                )
+            proto = match.group(1) or "tcp"
+            low = int(match.group(2))
+            high = int(match.group(3)) if match.group(3) else None
+        for port in (low, high):
+            if port is not None and not 1 <= port <= 65535:
+                fail(
+                    f"network.open_ports entry {entry!r}: "
+                    f"port {port} is outside 1-65535"
+                )
+        if high is not None and high < low:
+            fail(f"network.open_ports range {entry!r} is backwards")
+        by_proto[proto].append(str(low) if high is None else f"{low}-{high}")
+    return by_proto
+
 
 def key_file_path(setting: str) -> Path:
     """Expand ~ and resolve relative paths against the repo root."""
@@ -228,6 +265,7 @@ def render(cfg: dict, out_dir: Path) -> Path:
     hcl = env.get_template("main.tf.j2").render(
         **cfg,
         ssh_public_keys=resolve_ssh_public_keys(cfg["vm"]),
+        open_ports=parse_open_ports(cfg["network"]),
         startup_script=(TEMPLATE_DIR / "policy-routing.sh").read_text().rstrip(),
     )
     out_dir.mkdir(parents=True, exist_ok=True)

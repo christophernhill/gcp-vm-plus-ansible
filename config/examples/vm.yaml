@@ -14,9 +14,15 @@ gcp:
 network:
   name: rocky10-net
   # CIDRs allowed to reach SSH. 0.0.0.0/0 = open internet.
-  # GCP VPCs deny all other ingress by default, so SSH is the only open port.
+  # GCP VPCs deny all other ingress by default, so SSH and the
+  # open_ports list below are the only ways in.
   ssh_source_ranges:
     - 0.0.0.0/0
+  # Extra ports to open to the public internet (0.0.0.0/0) on top of
+  # SSH; applies to every external IP and NIC. Each entry is a port, a
+  # "low-high" range, or either with a tcp:/udp: prefix (plain entries
+  # are TCP), e.g. [80, 443, "8000-8100", "udp:51820"]. Empty = SSH only.
+  open_ports: []
 
 vm:
   name: rocky10-vm
@@ -28,8 +34,8 @@ vm:
   boot_disk_type: pd-balanced       # pd-standard | pd-balanced | pd-ssd
   # Total external IPv4 addresses on the VM, 1-8. The first is the NIC's
   # ephemeral IP; each extra one is a reserved static IP routed to the
-  # same NIC via GCP protocol forwarding (the firewall still applies, so
-  # SSH remains the only open port on every address). These do NOT show
+  # same NIC via GCP protocol forwarding (the firewall still applies —
+  # the same rules cover every address). These do NOT show
   # up as interfaces in `ip a` — for that, see nic_count below.
   external_ip_count: 1
   # Number of network interfaces (vNICs), 1-8, each visible in `ip a`

@@ -10,7 +10,8 @@ Hard requirements the code enforces:
 
 - At least 64 GB RAM (default machine type: `n2-standard-16`)
 - At least 250 GB of disk (a `pd-balanced` boot disk)
-- SSH reachable from the open internet; **all other inbound ports closed**
+- SSH reachable from the open internet; **all other inbound ports
+  closed** unless explicitly listed in `network.open_ports`
 - All key settings parameterized in one YAML file (`config/vm.yaml`)
 
 The flow is: edit `config/vm.yaml` → run `generator/generate.py` (loads
@@ -41,9 +42,14 @@ with `tofu`.
   storage" is implemented as a 250 GB boot disk. This was a deliberate
   choice discussed with the user.
 - **Security model relies on GCP's VPC default-deny.** The VM sits on
-  its own VPC with exactly one ingress rule (TCP/22 from
-  `network.ssh_source_ranges`). Do not attach it to the `default`
-  network and do not add allow rules without asking.
+  its own VPC with one ingress rule (TCP/22 from
+  `network.ssh_source_ranges`) plus, only when `network.open_ports` is
+  non-empty, a second rule (`<network>-allow-public`) opening those
+  ports to `0.0.0.0/0` (added at user request 2026-09-25; entries are
+  ports, `low-high` ranges, or `tcp:`/`udp:`-prefixed, parsed by
+  `parse_open_ports` in `generate.py`). Do not attach the VM to the
+  `default` network and do not add allow rules beyond these two
+  without asking.
 - **RAM guardrail** in `generate.py` parses predefined machine-type
   names (`<family>-standard|highmem|highcpu-<vcpus>`) and fails if the
   inferred RAM is below `vm.min_memory_gb` (default 64); it only warns
@@ -129,6 +135,11 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   path through the preset code — verified byte-identical render).
   Likewise `setup0.sh`'s wheel/sudo group detection is untested on a
   live Debian-family VM (it has not been run anywhere yet, see below).
+- **`network.open_ports` is unset on the deployed VM** — SSH remains
+  its only open port, and no `-allow-public` rule has ever been
+  applied (the knob passes `tofu validate` only). Adding the feature
+  changed the rendered HCL for existing configs in comments only;
+  `tofu plan` against the deployed state is a no-op.
 
 - **The VM is deployed.** `gcp.project_id` is set to the real project
   (`orcd-dr`) and `tofu apply` has created the network, firewall rule,

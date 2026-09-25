@@ -31,7 +31,7 @@ resource "google_compute_subnetwork" "subnet" {
   ip_cidr_range = "10.10.${count.index}.0/24"
 }
 {% endif %}
-# GCP VPCs deny all ingress by default, so this is the only inbound path.
+# GCP VPCs deny all ingress by default; these rules are the only inbound paths.
 resource "google_compute_firewall" "allow_ssh" {
   name      = "{{ network.name }}-allow-ssh"
   network   = google_compute_network.vpc.name
@@ -45,7 +45,22 @@ resource "google_compute_firewall" "allow_ssh" {
   source_ranges = [{% for cidr in network.ssh_source_ranges %}"{{ cidr }}"{{ ", " if not loop.last }}{% endfor %}]
   target_tags   = ["{{ vm.name }}"]
 }
-
+{% if open_ports.tcp or open_ports.udp %}
+# Extra ports opened to the public internet via network.open_ports.
+resource "google_compute_firewall" "allow_public" {
+  name      = "{{ network.name }}-allow-public"
+  network   = google_compute_network.vpc.name
+  direction = "INGRESS"
+{% for proto in ("tcp", "udp") if open_ports[proto] %}
+  allow {
+    protocol = "{{ proto }}"
+    ports    = [{% for port in open_ports[proto] %}"{{ port }}"{{ ", " if not loop.last }}{% endfor %}]
+  }
+{% endfor %}
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["{{ vm.name }}"]
+}
+{% endif %}
 resource "google_compute_instance" "vm" {
   name         = "{{ vm.name }}"
   machine_type = "{{ vm.machine_type }}"
@@ -87,7 +102,7 @@ resource "google_compute_instance" "vm" {
 # Extra external IPv4 addresses, delivered to the VM's single NIC via
 # protocol forwarding. The google-guest-agent in the image installs
 # local routes for them automatically, and the VPC firewall still
-# applies — SSH stays the only open port on every address.
+# applies — the same rules govern every address.
 resource "google_compute_address" "extra" {
   count  = {{ vm.external_ip_count - 1 }}
   name   = "{{ vm.name }}-ip-${count.index + 2}"
