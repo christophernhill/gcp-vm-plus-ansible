@@ -4,8 +4,9 @@ Context for agents picking up work on this repository.
 
 ## What this project is
 
-A Python generator that renders OpenTofu HCL to create a single Rocky
-Linux 10 VM on GCP. Hard requirements the code enforces:
+A Python generator that renders OpenTofu HCL to create a single VM on
+GCP (Rocky Linux 10 by default, selectable via the `vm.os` preset).
+Hard requirements the code enforces:
 
 - At least 64 GB RAM (default machine type: `n2-standard-16`)
 - At least 250 GB of disk (a `pd-balanced` boot disk)
@@ -22,7 +23,7 @@ with `tofu`.
 |---|---|
 | `config/examples/` | Committed config templates (placeholder values, no real keys) — copy into `config/` and edit |
 | `config/vm.yaml` | Single source of truth for all settings. Local copy of the example — gitignored |
-| `config/rocky_authorized_keys` | Initial public keys for the base login (`rocky`), one per line. Local copy — gitignored |
+| `config/base_authorized_keys` | Initial public keys for the base login (`vm.ssh_user`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
@@ -47,13 +48,23 @@ with `tofu`.
   names (`<family>-standard|highmem|highcpu-<vcpus>`) and fails if the
   inferred RAM is below `vm.min_memory_gb` (default 64); it only warns
   for names it can't parse. Disk has a hard 250 GB floor.
-- **Image is a family reference** (`rocky-linux-cloud/rocky-linux-10`)
-  so it tracks the latest Rocky 10 release automatically.
+- **The base OS is a `vm.os` preset** (rocky-10/9, almalinux-10/9,
+  ubuntu-24.04/22.04, debian-13/12; table `OS_PRESETS` in
+  `generate.py`, all family names verified against the live GCP API
+  2026-09-25). A preset expands to `vm.image` + a default `vm.ssh_user`
+  (the distro's conventional login); an explicit `ssh_user` overrides
+  the default, and `vm.os` + `vm.image` together is an error. For
+  unlisted images, set `vm.image.project`/`family` directly — with
+  `vm.os` absent, behavior is exactly the pre-preset generator, which
+  is what keeps the deployed VM's render byte-identical.
+- **Image is a family reference** (e.g. `rocky-linux-cloud/rocky-linux-10`)
+  so it tracks the latest release in the family automatically.
 - SSH keys go in via instance metadata (`ssh-keys`), not OS Login. Keys
   for the base login are merged from three `vm.*` sources
   (`ssh_public_key` inline, `ssh_public_key_file` single-key file,
-  `ssh_public_keys_file` multi-key file — default
-  `config/rocky_authorized_keys`), deduplicated, at least one required.
+  `ssh_public_keys_file` multi-key file — no code default; the example
+  config points it at `config/base_authorized_keys`), deduplicated, at
+  least one required.
 - **Extra external IPv4s use protocol forwarding, not extra NICs.**
   `vm.external_ip_count` (1–8, default 1) controls the total; the first
   is the NIC's ephemeral IP, the rest are reserved `google_compute_address`es
@@ -105,10 +116,19 @@ negative test is: point `--config` at a copy of `vm.yaml` with
 
 - **Live config is untracked** (since 2026-09-25): everything in
   `config/` except `config/examples/` is gitignored. The deployed VM's
-  actual `vm.yaml` and `rocky_authorized_keys` exist only on the
-  original author's machine (like the tofu state) and in git history
-  before this change; the committed examples carry placeholder values.
-  The deployed values that matter are recorded in the bullets below.
+  actual `vm.yaml` and keys file exist only on the original author's
+  machine (like the tofu state) and in git history before this change;
+  the committed examples carry placeholder values. The deployed values
+  that matter are recorded in the bullets below. Note: the author's
+  local keys file still uses the pre-rename name
+  `config/rocky_authorized_keys` (the setting is explicit in their
+  `vm.yaml`, so it keeps working); the example was renamed to
+  `base_authorized_keys` when OS presets landed.
+- **`vm.os` presets have not been applied to a real VM.** The deployed
+  VM predates them and its config sets `vm.image` directly (a no-op
+  path through the preset code — verified byte-identical render).
+  Likewise `setup0.sh`'s wheel/sudo group detection is untested on a
+  live Debian-family VM (it has not been run anywhere yet, see below).
 
 - **The VM is deployed.** `gcp.project_id` is set to the real project
   (`orcd-dr`) and `tofu apply` has created the network, firewall rule,
@@ -150,7 +170,8 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   `config/rocky_authorized_keys` holds two more keys (lincolnb,
   thekla); all three are deployed in the instance's ssh-keys metadata.
 - Initial provisioning is a shell script, `provisioning/setup0.sh`
-  (admin accounts lincolnb + tloizou, sudo via wheel + NOPASSWD
+  (admin accounts lincolnb + tloizou, sudo via the detected sudo group
+  — wheel on RHEL-family, sudo on Debian-family — + NOPASSWD
   drop-in, locked passwords so SSH keys are the only way in). It has
   **not been run yet** — it needs the users' public keys dropped into
   `provisioning/keys/<username>.pub` first, and it refuses to run

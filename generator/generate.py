@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render OpenTofu HCL for a Rocky Linux 10 GCP VM from a YAML config.
+"""Render OpenTofu HCL for a GCP VM from a YAML config.
 
 Usage:
     python3 generator/generate.py [--config config/vm.yaml] [--out build]
@@ -15,6 +15,19 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+
+# vm.os presets: image project, image family, default ssh_user. For any
+# GCP public image not listed here, set vm.image + vm.ssh_user instead.
+OS_PRESETS = {
+    "rocky-10":     ("rocky-linux-cloud", "rocky-linux-10", "rocky"),
+    "rocky-9":      ("rocky-linux-cloud", "rocky-linux-9", "rocky"),
+    "almalinux-10": ("almalinux-cloud", "almalinux-10", "almalinux"),
+    "almalinux-9":  ("almalinux-cloud", "almalinux-9", "almalinux"),
+    "ubuntu-24.04": ("ubuntu-os-cloud", "ubuntu-2404-lts-amd64", "ubuntu"),
+    "ubuntu-22.04": ("ubuntu-os-cloud", "ubuntu-2204-lts", "ubuntu"),
+    "debian-13":    ("debian-cloud", "debian-13", "debian"),
+    "debian-12":    ("debian-cloud", "debian-12", "debian"),
+}
 
 # GB of RAM per vCPU for the common predefined machine-type families.
 GB_PER_VCPU = {"standard": 4, "highmem": 8, "highcpu": 1}
@@ -73,12 +86,39 @@ def load_config(path: Path) -> dict:
     return cfg
 
 
+def apply_os_preset(cfg: dict) -> None:
+    """Expand vm.os into vm.image and a default vm.ssh_user."""
+    vm = cfg.get("vm")
+    if not isinstance(vm, dict) or "os" not in vm:
+        return
+    if vm["os"] not in OS_PRESETS:
+        fail(
+            f"unknown vm.os {vm['os']!r}; valid presets: "
+            + ", ".join(sorted(OS_PRESETS))
+        )
+    if "image" in vm:
+        fail(
+            "vm.os and vm.image are mutually exclusive: drop one "
+            "(use vm.image only for images without a preset)"
+        )
+    project, family, user = OS_PRESETS[vm["os"]]
+    vm["image"] = {"project": project, "family": family}
+    vm.setdefault("ssh_user", user)
+
+
 def validate(cfg: dict) -> None:
+    apply_os_preset(cfg)
+
     for section, key in REQUIRED_KEYS:
         if key not in cfg.get(section, {}):
             fail(f"missing required setting: {section}.{key}")
 
     vm = cfg["vm"]
+    image = vm["image"]
+    if not isinstance(image, dict) or not all(
+        isinstance(image.get(k), str) and image[k] for k in ("project", "family")
+    ):
+        fail("vm.image must set both project and family (or use a vm.os preset)")
     min_gb = vm.get("min_memory_gb", 64)
     machine_type = vm["machine_type"]
     match = MACHINE_TYPE_RE.match(machine_type)

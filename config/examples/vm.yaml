@@ -1,4 +1,4 @@
-# Settings for the Rocky Linux 10 VM on GCP.
+# Settings for a VM on GCP.
 #
 # This is the committed example. The generator reads the local copy at
 # config/vm.yaml, which is gitignored:
@@ -38,16 +38,25 @@ vm:
   # and with >1 the VPC switches from auto to custom subnets, which
   # replaces the network too. Meant for new VMs, not a deployed one.
   nic_count: 1
-  image:
-    project: rocky-linux-cloud
-    family: rocky-linux-10
-  ssh_user: rocky
+  # Base OS. One of: rocky-10, rocky-9, almalinux-10, almalinux-9,
+  # ubuntu-24.04, ubuntu-22.04, debian-13, debian-12. Sets the boot
+  # image and the default ssh_user. For any other GCP public image,
+  # delete vm.os and set vm.image instead (the two are mutually
+  # exclusive):
+  os: rocky-10
+  # image:
+  #   project: rocky-linux-cloud
+  #   family: rocky-linux-10
+  # Login account created via the instance's ssh-keys metadata. The
+  # vm.os preset picks the distro's conventional name (rocky, ubuntu,
+  # debian, almalinux); uncomment to override, required with vm.image:
+  # ssh_user: rocky
   # Public keys injected into the VM's metadata for ssh_user. All three
   # sources below are merged (duplicates dropped); at least one key must
   # come from somewhere.
   # A file of initial keys, one per line (authorized_keys format;
   # blank lines and # comments ignored). Relative to the repo root:
-  ssh_public_keys_file: config/rocky_authorized_keys
+  ssh_public_keys_file: config/base_authorized_keys
   # A single-key file...
   # ssh_public_key_file: ~/.ssh/id_ed25519.pub
   # ...or a key pasted inline:

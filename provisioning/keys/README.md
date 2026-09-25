@@ -11,8 +11,8 @@ keys/tloizou.pub
 non-empty key file here.
 
 This directory is only for the admin accounts that `setup0.sh` creates.
-Initial keys for the base login (`rocky`) go in
-`config/rocky_authorized_keys` instead, which the generator injects via
+Initial keys for the base login (`vm.ssh_user`, e.g. `rocky`) go in
+`config/base_authorized_keys` instead, which the generator injects via
 instance metadata.
 
 Public keys are safe to commit. Never put private keys in this

@@ -1,9 +1,9 @@
 # gcp-vm-plus-ansible
 
-Python generator that renders OpenTofu configuration for a Rocky Linux 10
-VM on GCP: 64 GB+ RAM, 250 GB boot disk, SSH open to the internet, all
-other inbound ports closed (the VM sits on its own VPC, and GCP VPCs deny
-ingress by default).
+Python generator that renders OpenTofu configuration for a VM on GCP
+(Rocky Linux 10 by default — see "Choosing the OS"): 64 GB+ RAM, 250 GB
+boot disk, SSH open to the internet, all other inbound ports closed (the
+VM sits on its own VPC, and GCP VPCs deny ingress by default).
 
 ## Layout
 
@@ -11,11 +11,12 @@ ingress by default).
 config/examples/             committed config templates — copy them into
                              config/ and edit the copies
 config/vm.yaml               all tunable settings (project, zone, machine
-                             type, disk, image, SSH keys, external IP
+                             type, disk, OS, SSH keys, external IP
                              count, allowed CIDRs); your local copy of the
                              example, gitignored
-config/rocky_authorized_keys initial public keys for the base login
-                             ("rocky"), one per line; local copy, gitignored
+config/base_authorized_keys  initial public keys for the base login
+                             (vm.ssh_user), one per line; local copy,
+                             gitignored
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
 provisioning/                material that runs on the VM after apply:
@@ -28,9 +29,9 @@ build/                       generated main.tf lands here (gitignored)
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp config/examples/vm.yaml config/vm.yaml
-cp config/examples/rocky_authorized_keys config/rocky_authorized_keys
+cp config/examples/base_authorized_keys config/base_authorized_keys
 # edit config/vm.yaml: set gcp.project_id and at least one SSH key source
-# (add keys to config/rocky_authorized_keys and/or set vm.ssh_public_key*)
+# (add keys to config/base_authorized_keys and/or set vm.ssh_public_key*)
 .venv/bin/python generator/generate.py
 tofu -chdir=build init
 tofu -chdir=build apply
@@ -46,6 +47,30 @@ less than `vm.min_memory_gb` (default 64) or the boot disk is under 250 GB.
 Outputs after `apply`: the VM's public IP (`public_ip`), the list of all
 external IPv4 addresses (`public_ips`), and a ready-to-paste `ssh` command.
 
+## Choosing the OS
+
+Set `vm.os` to one of the presets; it picks the boot image and the
+distro's conventional login name for `vm.ssh_user` (override by setting
+`ssh_user` yourself):
+
+| `vm.os` | image | default `ssh_user` |
+|---|---|---|
+| `rocky-10` (example default) | rocky-linux-cloud/rocky-linux-10 | `rocky` |
+| `rocky-9` | rocky-linux-cloud/rocky-linux-9 | `rocky` |
+| `almalinux-10` | almalinux-cloud/almalinux-10 | `almalinux` |
+| `almalinux-9` | almalinux-cloud/almalinux-9 | `almalinux` |
+| `ubuntu-24.04` | ubuntu-os-cloud/ubuntu-2404-lts-amd64 | `ubuntu` |
+| `ubuntu-22.04` | ubuntu-os-cloud/ubuntu-2204-lts | `ubuntu` |
+| `debian-13` | debian-cloud/debian-13 | `debian` |
+| `debian-12` | debian-cloud/debian-12 | `debian` |
+
+For any other GCP public image, drop `vm.os` and set `vm.image.project`
++ `vm.image.family` (plus `vm.ssh_user`) directly — `vm.os` and
+`vm.image` are mutually exclusive. Find families with
+`gcloud compute images list`. The RAM/disk guardrails apply either way,
+and everything else (firewall, extra IPs, NICs, provisioning) is
+distro-independent.
+
 ## Multiple external IPv4 addresses
 
 Set `vm.external_ip_count` (1–8, default 1) to give the VM more than one
@@ -53,8 +78,8 @@ external IPv4 address. The first address is the NIC's ephemeral IP, as
 before; each additional one is a reserved static IP routed to the same
 NIC with GCP protocol forwarding (`google_compute_address` +
 `google_compute_target_instance` + `google_compute_forwarding_rule`,
-protocol `L3_DEFAULT`). The google-guest-agent shipped in the Rocky
-image adds local routes for the forwarded addresses automatically, and
+protocol `L3_DEFAULT`). The google-guest-agent shipped in official GCP
+images adds local routes for the forwarded addresses automatically, and
 the VPC firewall applies to them like any other traffic — SSH stays the
 only open port on every address.
 
@@ -98,12 +123,13 @@ tofu -chdir=build2 init && tofu -chdir=build2 apply
 
 ## SSH keys for the base login
 
-The keys that can log in as `rocky` come from three merged sources in
-`config/vm.yaml` (duplicates removed; at least one key is required):
+The keys that can log in as the base user (`vm.ssh_user`) come from
+three merged sources in `config/vm.yaml` (duplicates removed; at least
+one key is required):
 
 - `vm.ssh_public_keys_file` — a file of initial keys, one per line in
-  `authorized_keys` format (blank lines and `#` comments ignored);
-  defaults to `config/rocky_authorized_keys`
+  `authorized_keys` format (blank lines and `#` comments ignored); the
+  example config points it at `config/base_authorized_keys`
 - `vm.ssh_public_key_file` — a single-key file
 - `vm.ssh_public_key` — a key pasted inline
 
@@ -126,11 +152,13 @@ first (see the README there), then:
 
 ```sh
 IP=$(tofu -chdir=build output -raw public_ip)
-scp -r provisioning rocky@"$IP":
+scp -r provisioning rocky@"$IP":    # rocky = vm.ssh_user; adjust for your OS
 ssh rocky@"$IP" 'sudo bash provisioning/setup0.sh'
 ```
 
-The script is idempotent — re-run it after adding or rotating keys.
+The script is idempotent — re-run it after adding or rotating keys. It
+detects the distro's sudo group at runtime (`wheel` on RHEL-family,
+`sudo` on Debian-family), so it works on every `vm.os` preset.
 
 ## Google Cloud authentication
 
