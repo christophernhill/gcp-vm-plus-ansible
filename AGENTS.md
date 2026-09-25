@@ -180,13 +180,24 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   specific to the original author's machine.
   `config/rocky_authorized_keys` holds two more keys (lincolnb,
   thekla); all three are deployed in the instance's ssh-keys metadata.
-- `provisioning/capture.sh` (added 2026-09-25) is a read-only state
-  report — accounts, sudoers, packages installed since an anchor
-  (default: first boot via `/etc/machine-id` mtime), services, timers,
-  sockets, routing, firewall, `/etc`//`/usr/local` changes. Both its
-  rpm/dnf and dpkg paths were smoke-tested in Rocky 9 and Debian 12
-  containers (simulated provisioning detected; anchor override
-  filters correctly), but it has not been run on the live VM.
+- `provisioning/capture.sh` (added 2026-09-25, expanded same day) is a
+  read-only state report aimed at reconfiguring a new VM the same way:
+  accounts, sudoers, package replay lists (`dnf history userinstalled`
+  / `apt-mark showmanual`), repos, full transaction history, services
+  (plus preset diffs), local unit/drop-in contents, containers
+  (nspawn/machinectl/docker/podman/lxc), timers, sockets, routing,
+  firewall zones, storage, and contents of `/etc` files changed since
+  the anchor (comment-stripped; secret-named files withheld,
+  password-like lines redacted). Anchor prefers
+  `/etc/google_instance_id` mtime (instance first boot) over
+  `/etc/machine-id` (can be the image build — the live VM's image
+  bakes it, which polluted the first real report). Verified in Rocky 9
+  and Debian 12 containers including secret-withholding paths. A real
+  report from the live VM exists locally as `provisioning/mmm.txt` —
+  it is untracked and must NOT be committed (real IPs, usernames,
+  infra details; the repo is public). It shows the live VM runs
+  systemd-nspawn containers, dnsmasq, Slurm and Ansible configs, and a
+  reconfigured firewalld — none of it managed by this repo.
 - Initial provisioning is a shell script, `provisioning/setup0.sh`
   (admin accounts lincolnb + tloizou, sudo via the detected sudo group
   — wheel on RHEL-family, sudo on Debian-family — + NOPASSWD

@@ -182,26 +182,38 @@ detects the distro's sudo group at runtime (`wheel` on RHEL-family,
 ## Capturing the VM's state
 
 `provisioning/capture.sh` is the read-only counterpart to `setup0.sh`:
-it prints a report of what has been applied, added, started, and
-installed on the VM since provisioning — accounts and their SSH key
-fingerprints, sudoers drop-ins, packages installed since the anchor,
-enabled/running services, timers and cron, listening sockets,
-network/policy-routing state, the local firewall, and files changed
-under `/etc` and `/usr/local`. It modifies nothing:
+it prints a report with enough detail to reconfigure a new VM the same
+way — accounts (with SSH key fingerprints and login sessions), sudoers
+drop-ins, packages installed since the anchor plus replay lists
+(`dnf history userinstalled` / `apt-mark showmanual`), enabled
+repositories and the full transaction history, enabled/running
+services and units whose state differs from the vendor preset,
+locally added systemd units and drop-ins (with contents), containers
+(systemd-nspawn configs, machinectl, docker/podman/lxc), timers and
+cron, listening sockets, network/policy-routing state, firewall zones,
+storage/fstab, and the files changed under `/etc` — including their
+contents, comment-stripped. Files whose names suggest secrets (keys,
+password stores) are listed but their contents withheld, and
+password-like lines inside other files are redacted. It modifies
+nothing:
 
 ```sh
 ssh rocky@"$IP" 'sudo bash provisioning/capture.sh' > vm-state.txt
 ```
 
-The "since" anchor defaults to the VM's first boot (the mtime of
-`/etc/machine-id`); pass any `date -d`-parsable timestamp to override:
+The "since" anchor defaults to the instance's first boot (the mtime of
+`/etc/google_instance_id`, falling back to `/etc/machine-id`, whose
+mtime can be the image build); pass any `date -d`-parsable timestamp
+to override:
 
 ```sh
 ssh rocky@"$IP" 'sudo bash provisioning/capture.sh "2026-09-23 12:00"'
 ```
 
 Like `setup0.sh`, it is distro-aware (rpm/dnf vs dpkg) and works on
-every `vm.os` preset.
+every `vm.os` preset. Reports can contain sensitive operational detail
+(IPs, usernames, sockets) even with secrets withheld — treat saved
+reports as private and keep them out of the repo.
 
 ## Google Cloud authentication
 
