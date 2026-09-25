@@ -49,11 +49,23 @@ def fail(msg: str) -> None:
     sys.exit(f"error: {msg}")
 
 
+def example_hint(path: Path) -> str:
+    """Suggest copying the committed example when a config file is missing."""
+    example = REPO_ROOT / "config" / "examples" / path.name
+    if not example.is_file():
+        return ""
+    try:
+        target = path.relative_to(REPO_ROOT)
+    except ValueError:
+        target = path
+    return f" (start from the example: cp config/examples/{path.name} {target})"
+
+
 def load_config(path: Path) -> dict:
     try:
         cfg = yaml.safe_load(path.read_text())
     except FileNotFoundError:
-        fail(f"config file not found: {path}")
+        fail(f"config file not found: {path}{example_hint(path)}")
     except yaml.YAMLError as exc:
         fail(f"could not parse {path}: {exc}")
     if not isinstance(cfg, dict):
@@ -145,7 +157,7 @@ def resolve_ssh_public_keys(vm: dict) -> list[str]:
             continue
         path = key_file_path(vm[setting])
         if not path.is_file():
-            fail(f"vm.{setting}: file not found: {path}")
+            fail(f"vm.{setting}: file not found: {path}{example_hint(path)}")
         for line in path.read_text().splitlines():
             line = line.strip()
             if not line or line.startswith("#"):

@@ -20,8 +20,9 @@ with `tofu`.
 
 | Path | Role |
 |---|---|
-| `config/vm.yaml` | Single source of truth for all settings |
-| `config/rocky_authorized_keys` | Initial public keys for the base login (`rocky`), one per line |
+| `config/examples/` | Committed config templates (placeholder values, no real keys) — copy into `config/` and edit |
+| `config/vm.yaml` | Single source of truth for all settings. Local copy of the example — gitignored |
+| `config/rocky_authorized_keys` | Initial public keys for the base login (`rocky`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
@@ -100,7 +101,14 @@ guardrails plus `tofu validate`. If you change validation logic, a quick
 negative test is: point `--config` at a copy of `vm.yaml` with
 `machine_type: e2-standard-8` and confirm it exits non-zero.
 
-## Current state / known gaps (as of 2026-09-23)
+## Current state / known gaps (as of 2026-09-25)
+
+- **Live config is untracked** (since 2026-09-25): everything in
+  `config/` except `config/examples/` is gitignored. The deployed VM's
+  actual `vm.yaml` and `rocky_authorized_keys` exist only on the
+  original author's machine (like the tofu state) and in git history
+  before this change; the committed examples carry placeholder values.
+  The deployed values that matter are recorded in the bullets below.
 
 - **The VM is deployed.** `gcp.project_id` is set to the real project
   (`orcd-dr`) and `tofu apply` has created the network, firewall rule,
@@ -162,6 +170,8 @@ negative test is: point `--config` at a copy of `vm.yaml` with
 - Commit messages: meaningful summary + body, and the body must include
   "Assisted by AI." (user requirement). AI-authored commits also carry a
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` trailer.
-- Never commit `build/`, `*.tfstate`, `.terraform/`, or credential JSON
-  files — `.gitignore` already covers these.
+- Never commit `build*/`, `*.tfstate`, `.terraform/`, credential JSON
+  files, or anything in `config/` outside `config/examples/` —
+  `.gitignore` already covers these. Config changes meant for everyone
+  belong in the `config/examples/` templates.
 - License is MIT. Remote: https://github.com/christophernhill/gcp-vm-plus-ansible (public).

@@ -8,11 +8,14 @@ ingress by default).
 ## Layout
 
 ```
+config/examples/             committed config templates — copy them into
+                             config/ and edit the copies
 config/vm.yaml               all tunable settings (project, zone, machine
                              type, disk, image, SSH keys, external IP
-                             count, allowed CIDRs)
+                             count, allowed CIDRs); your local copy of the
+                             example, gitignored
 config/rocky_authorized_keys initial public keys for the base login
-                             ("rocky"), one per line
+                             ("rocky"), one per line; local copy, gitignored
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
 provisioning/                material that runs on the VM after apply:
@@ -24,12 +27,18 @@ build/                       generated main.tf lands here (gitignored)
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-# edit config/vm.yaml — gcp.project_id and the SSH key are set for the
-# author's environment; change them for yours
+cp config/examples/vm.yaml config/vm.yaml
+cp config/examples/rocky_authorized_keys config/rocky_authorized_keys
+# edit config/vm.yaml: set gcp.project_id and at least one SSH key source
+# (add keys to config/rocky_authorized_keys and/or set vm.ssh_public_key*)
 .venv/bin/python generator/generate.py
 tofu -chdir=build init
 tofu -chdir=build apply
 ```
+
+Everything in `config/` except `examples/` is gitignored, so your real
+project ID, keys, and any extra configs (e.g. `vm2.yaml`) stay local —
+only the templates in `config/examples/` are committed.
 
 The generator enforces the guardrails: it fails if the machine type has
 less than `vm.min_memory_gb` (default 64) or the boot disk is under 250 GB.

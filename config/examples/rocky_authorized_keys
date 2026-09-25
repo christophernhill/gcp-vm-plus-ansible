@@ -1,0 +1,14 @@
+# Initial SSH public keys for the base login (vm.ssh_user, "rocky").
+# One OpenSSH public key per line, authorized_keys format. Blank lines
+# and comments are ignored. The generator merges these with
+# vm.ssh_public_key / vm.ssh_public_key_file into the instance's
+# ssh-keys metadata.
+#
+# This is the committed example. The generator reads the local copy at
+# config/rocky_authorized_keys, which is gitignored:
+#     cp config/examples/rocky_authorized_keys config/rocky_authorized_keys
+# Add your keys to the copy. Public keys are safe to share, but the
+# local copy stays out of git; never put private keys anywhere in here.
+#
+# Example:
+# ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... user@host

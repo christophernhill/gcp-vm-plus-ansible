@@ -1,7 +1,11 @@
-build/
+build*/
 .venv/
 __pycache__/
 *.tfstate
 *.tfstate.backup
 .terraform/
 .terraform.lock.hcl
+
+# Live config is local-only: copy templates from config/examples/ (tracked)
+config/*
+!config/examples/

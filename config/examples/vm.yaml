@@ -1,8 +1,13 @@
 # Settings for the Rocky Linux 10 VM on GCP.
-# Edit these values, then run: python3 generator/generate.py
+#
+# This is the committed example. The generator reads the local copy at
+# config/vm.yaml, which is gitignored:
+#     cp config/examples/vm.yaml config/vm.yaml
+# Edit the copy (at minimum gcp.project_id and an SSH key source), then
+# run: python3 generator/generate.py
 
 gcp:
-  project_id: orcd-dr
+  project_id: my-gcp-project
   region: us-central1
   zone: us-central1-a
 
@@ -26,12 +31,12 @@ vm:
   # same NIC via GCP protocol forwarding (the firewall still applies, so
   # SSH remains the only open port on every address). These do NOT show
   # up as interfaces in `ip a` — for that, see nic_count below.
-  external_ip_count: 4
+  external_ip_count: 1
   # Number of network interfaces (vNICs), 1-8, each visible in `ip a`
   # with its own subnet (10.10.<i>.0/24) and its own external IP.
   # WARNING: changing this replaces the VM (NICs are fixed at creation),
   # and with >1 the VPC switches from auto to custom subnets, which
-  # replaces the network too. Meant for new VMs, not the deployed one.
+  # replaces the network too. Meant for new VMs, not a deployed one.
   nic_count: 1
   image:
     project: rocky-linux-cloud
@@ -44,6 +49,6 @@ vm:
   # blank lines and # comments ignored). Relative to the repo root:
   ssh_public_keys_file: config/rocky_authorized_keys
   # A single-key file...
-  ssh_public_key_file: ~/.ssh/gce_cf_key.pub
+  # ssh_public_key_file: ~/.ssh/id_ed25519.pub
   # ...or a key pasted inline:
   # ssh_public_key: "ssh-ed25519 AAAA... user@host"
