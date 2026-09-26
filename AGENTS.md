@@ -26,10 +26,11 @@ with `tofu`.
 | `config/vm.yaml` | Single source of truth for all settings. Local copy of the example — gitignored |
 | `config/base_authorized_keys` | Initial public keys for the base login (`vm.ssh_user`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
-| `docs/multi-provider-design.md` | Design (not implemented) for AWS as an alternate provider |
+| `docs/multi-provider-design.md` | Design for AWS as an alternate provider (phase 1 of 5 landed) |
 | `docs/multi-provider-implementation-plan.md` | Phase-by-phase execution plan for that design, written for an implementing agent |
-| `generator/templates/main.tf.j2` | OpenTofu HCL template |
-| `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
+| `generator/providers/` | One module per cloud (`gcp.py`; interface in design §3.2). `generate.py` keeps the shared core and picks the module via the `PROVIDERS` registry |
+| `generator/templates/gcp/main.tf.j2` | OpenTofu HCL template (GCP) |
+| `generator/templates/gcp/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
@@ -132,7 +133,7 @@ guardrails plus `tofu validate`. If you change validation logic, a quick
 negative test is: point `--config` at a copy of `vm.yaml` with
 `machine_type: e2-standard-8` and confirm it exits non-zero.
 
-## Current state / known gaps (as of 2026-09-25)
+## Current state / known gaps (as of 2026-09-26)
 
 - **Live config is untracked** (since 2026-09-25): everything in
   `config/` except `config/examples/` is gitignored. The deployed VM's
@@ -144,10 +145,18 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   `config/rocky_authorized_keys` (the setting is explicit in their
   `vm.yaml`, so it keeps working); the example was renamed to
   `base_authorized_keys` when OS presets landed.
-- **The multi-provider (AWS) design doc is committed but zero code has
-  changed for it** (2026-09-25): `docs/multi-provider-design.md` is the
-  spec; the generator remains GCP-only and `provider: aws` is not
-  recognized anywhere yet.
+- **Multi-provider implementation is under way** (2026-09-26):
+  `docs/multi-provider-implementation-plan.md` is the executing spec.
+  Phase 1 (extract the provider interface) has landed: GCP-specific
+  code moved into `generator/providers/gcp.py` (presets, RAM
+  inference, image-shape/nic-count/placeholder checks) and the two
+  template files into `generator/templates/gcp/` — a pure refactor,
+  verified byte-identical against `build/main.tf` with a no-op
+  `tofu plan`. Provider hooks raise `ValueError` (the core's
+  `provider_call` wrapper turns it into `fail`); warnings print to
+  stderr. The generator remains GCP-only: the `PROVIDERS` registry has
+  just `gcp`, the `provider:` key is parsed but unadvertised, and
+  `provider: aws` fails with the unknown-provider error.
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).

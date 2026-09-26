@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render OpenTofu HCL for a GCP VM from a YAML config.
+"""Render OpenTofu HCL for a VM from a YAML config.
 
 Usage:
     python3 generator/generate.py [--config config/vm.yaml] [--out build]
@@ -13,36 +13,12 @@ from pathlib import Path
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from providers import gcp
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
-# vm.os presets: image project, image family, default ssh_user. For any
-# GCP public image not listed here, set vm.image + vm.ssh_user instead.
-OS_PRESETS = {
-    "rocky-10":         ("rocky-linux-cloud", "rocky-linux-10", "rocky"),
-    "rocky-9":          ("rocky-linux-cloud", "rocky-linux-9", "rocky"),
-    "almalinux-10":     ("almalinux-cloud", "almalinux-10", "almalinux"),
-    "almalinux-9":      ("almalinux-cloud", "almalinux-9", "almalinux"),
-    "centos-stream-10": ("centos-cloud", "centos-stream-10", "centos"),
-    "centos-stream-9":  ("centos-cloud", "centos-stream-9", "centos"),
-    "fedora-44":        ("fedora-cloud", "fedora-cloud-44-x86-64", "fedora"),
-    "fedora-43":        ("fedora-cloud", "fedora-cloud-43-x86-64", "fedora"),
-    "ubuntu-24.04":     ("ubuntu-os-cloud", "ubuntu-2404-lts-amd64", "ubuntu"),
-    "ubuntu-22.04":     ("ubuntu-os-cloud", "ubuntu-2204-lts", "ubuntu"),
-    "debian-13":        ("debian-cloud", "debian-13", "debian"),
-    "debian-12":        ("debian-cloud", "debian-12", "debian"),
-}
-
-# GB of RAM per vCPU for the common predefined machine-type families.
-GB_PER_VCPU = {"standard": 4, "highmem": 8, "highcpu": 1}
-MACHINE_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*-(standard|highmem|highcpu)-(\d+)$")
-
-# Cap on vm.external_ip_count (NIC IP + protocol-forwarded extras).
-MAX_EXTERNAL_IPS = 8
-
-# Cap on vm.nic_count. GCP allows up to 10 vNICs (fewer on small
-# machine types: 2-10 vCPUs get one vNIC per vCPU).
-MAX_NICS = 8
+PROVIDERS = {"gcp": gcp}
 
 # OpenSSH public-key line: key type, base64 blob, optional comment.
 PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECASE)
@@ -50,10 +26,9 @@ PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECA
 # network.open_ports entry: optional tcp:/udp: prefix, port or low-high range.
 OPEN_PORT_RE = re.compile(r"^(?:(tcp|udp):)?(\d{1,5})(?:-(\d{1,5}))?$")
 
+# Settings every provider needs; each provider module adds its own
+# (provider.REQUIRED_KEYS) on top.
 REQUIRED_KEYS = [
-    ("gcp", "project_id"),
-    ("gcp", "region"),
-    ("gcp", "zone"),
     ("network", "name"),
     ("network", "ssh_source_ranges"),
     ("vm", "name"),
@@ -67,6 +42,21 @@ REQUIRED_KEYS = [
 
 def fail(msg: str) -> None:
     sys.exit(f"error: {msg}")
+
+
+def get_provider(cfg: dict):
+    name = cfg.get("provider", "gcp")
+    if name not in PROVIDERS:
+        fail(f"unknown provider {name!r}; valid: " + ", ".join(sorted(PROVIDERS)))
+    return PROVIDERS[name]
+
+
+def provider_call(fn, cfg):
+    """Run a provider hook, turning its ValueError into a fatal error."""
+    try:
+        return fn(cfg)
+    except ValueError as exc:
+        fail(str(exc))
 
 
 def example_hint(path: Path) -> str:
@@ -93,45 +83,18 @@ def load_config(path: Path) -> dict:
     return cfg
 
 
-def apply_os_preset(cfg: dict) -> None:
-    """Expand vm.os into vm.image and a default vm.ssh_user."""
-    vm = cfg.get("vm")
-    if not isinstance(vm, dict) or "os" not in vm:
-        return
-    if vm["os"] not in OS_PRESETS:
-        fail(
-            f"unknown vm.os {vm['os']!r}; valid presets: "
-            + ", ".join(sorted(OS_PRESETS))
-        )
-    if "image" in vm:
-        fail(
-            "vm.os and vm.image are mutually exclusive: drop one "
-            "(use vm.image only for images without a preset)"
-        )
-    project, family, user = OS_PRESETS[vm["os"]]
-    vm["image"] = {"project": project, "family": family}
-    vm.setdefault("ssh_user", user)
+def validate(cfg: dict, provider) -> None:
+    provider_call(provider.apply_os_preset, cfg)
 
-
-def validate(cfg: dict) -> None:
-    apply_os_preset(cfg)
-
-    for section, key in REQUIRED_KEYS:
+    for section, key in REQUIRED_KEYS + provider.REQUIRED_KEYS:
         if key not in cfg.get(section, {}):
             fail(f"missing required setting: {section}.{key}")
 
     vm = cfg["vm"]
-    image = vm["image"]
-    if not isinstance(image, dict) or not all(
-        isinstance(image.get(k), str) and image[k] for k in ("project", "family")
-    ):
-        fail("vm.image must set both project and family (or use a vm.os preset)")
     min_gb = vm.get("min_memory_gb", 64)
     machine_type = vm["machine_type"]
-    match = MACHINE_TYPE_RE.match(machine_type)
-    if match:
-        family, vcpus = match.group(1), int(match.group(2))
-        ram_gb = vcpus * GB_PER_VCPU[family]
+    ram_gb = provider.machine_ram_gb(machine_type)
+    if ram_gb is not None:
         if ram_gb < min_gb:
             fail(
                 f"machine_type {machine_type} has {ram_gb} GB RAM, "
@@ -151,34 +114,25 @@ def validate(cfg: dict) -> None:
     if (
         isinstance(ip_count, bool)
         or not isinstance(ip_count, int)
-        or not 1 <= ip_count <= MAX_EXTERNAL_IPS
+        or not 1 <= ip_count <= provider.MAX_EXTERNAL_IPS
     ):
         fail(
             f"vm.external_ip_count is {ip_count!r}; "
-            f"must be an integer between 1 and {MAX_EXTERNAL_IPS}"
+            f"must be an integer between 1 and {provider.MAX_EXTERNAL_IPS}"
         )
 
     nic_count = vm.setdefault("nic_count", 1)
     if (
         isinstance(nic_count, bool)
         or not isinstance(nic_count, int)
-        or not 1 <= nic_count <= MAX_NICS
+        or not 1 <= nic_count <= provider.MAX_NICS
     ):
         fail(
             f"vm.nic_count is {nic_count!r}; "
-            f"must be an integer between 1 and {MAX_NICS}"
-        )
-    if match and nic_count > int(match.group(2)):
-        fail(
-            f"vm.nic_count is {nic_count}, but {machine_type} has only "
-            f"{match.group(2)} vCPUs (GCP allows at most one vNIC per vCPU)"
+            f"must be an integer between 1 and {provider.MAX_NICS}"
         )
 
-    if cfg["gcp"]["project_id"] == "my-gcp-project":
-        print(
-            "warning: gcp.project_id is still the placeholder 'my-gcp-project'",
-            file=sys.stderr,
-        )
+    provider_call(provider.validate, cfg)
 
     if not cfg["network"]["ssh_source_ranges"]:
         fail("network.ssh_source_ranges must list at least one CIDR")
@@ -260,17 +214,17 @@ def resolve_ssh_public_keys(vm: dict) -> list[str]:
     return deduped
 
 
-def render(cfg: dict, out_dir: Path) -> Path:
+def render(cfg: dict, out_dir: Path, provider) -> Path:
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         undefined=StrictUndefined,
         keep_trailing_newline=True,
     )
-    hcl = env.get_template("main.tf.j2").render(
+    hcl = env.get_template(f"{provider.TEMPLATE_SUBDIR}/main.tf.j2").render(
         **cfg,
         ssh_public_keys=resolve_ssh_public_keys(cfg["vm"]),
         open_ports=parse_open_ports(cfg["network"]),
-        startup_script=(TEMPLATE_DIR / "policy-routing.sh").read_text().rstrip(),
+        **provider.render_context(cfg),
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     out_file = out_dir / "main.tf"
@@ -287,8 +241,9 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    validate(cfg)
-    out_file = render(cfg, args.out)
+    provider = get_provider(cfg)
+    validate(cfg, provider)
+    out_file = render(cfg, args.out, provider)
     print(f"wrote {out_file}")
     print(f"next: tofu -chdir={args.out} init && tofu -chdir={args.out} apply")
 

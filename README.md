@@ -19,7 +19,8 @@ config/base_authorized_keys  initial public keys for the base login
                              (vm.ssh_user), one per line; local copy,
                              gitignored
 generator/generate.py        loads + validates the YAML, renders the template
-generator/templates/main.tf.j2   OpenTofu HCL template
+generator/providers/gcp.py   GCP-specific presets, guardrail inputs, checks
+generator/templates/gcp/main.tf.j2   OpenTofu HCL template (GCP)
 docs/                        design documents (multi-provider architecture)
 provisioning/                material that runs on the VM after apply:
                              setup0.sh (admin accounts), capture.sh
@@ -129,7 +130,7 @@ above 1 the VPC switches from auto-created subnets to one explicit
 subnet per NIC — GCP allows NICs to share a VPC as long as each has a
 unique subnet — so the single-VPC/default-deny security model is
 unchanged, and the same firewall rules cover every NIC. A
-startup-script (`generator/templates/policy-routing.sh`) is injected
+startup-script (`generator/templates/gcp/policy-routing.sh`) is injected
 into the instance metadata to set up source-based policy routing at
 each boot, so inbound connections to the secondary NICs' external IPs
 get their replies out of the right interface.
@@ -157,12 +158,14 @@ tofu -chdir=build2 init && tofu -chdir=build2 apply
 
 The generator currently targets GCP only. An architecture for adding AWS
 as an alternate provider is fully specified in
-[`docs/multi-provider-design.md`](docs/multi-provider-design.md): an
-optional `provider:` config key defaulting to `gcp`, provider modules
-under `generator/providers/`, per-provider templates and example configs,
-and a five-phase migration roadmap. **None of it is implemented yet** —
-every workflow in this README is unchanged, and existing configs need no
-edits (a config without a `provider:` key is a GCP config by definition).
+[`docs/multi-provider-design.md`](docs/multi-provider-design.md) and is
+being landed phase by phase per
+[`docs/multi-provider-implementation-plan.md`](docs/multi-provider-implementation-plan.md).
+So far only the phase-1 refactor is done: the GCP-specific code lives in
+`generator/providers/gcp.py` and the GCP template in
+`generator/templates/gcp/`, with byte-identical output. Every workflow
+in this README is unchanged, and existing configs need no edits (a
+config without a `provider:` key is a GCP config by definition).
 
 ## SSH keys for the base login
 
