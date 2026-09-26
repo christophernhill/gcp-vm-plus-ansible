@@ -739,3 +739,106 @@ This section doubles as the specification for phase 5.
   GCP one in `build/` and which phases have landed.
 - Both files change in the same commit as each phase, per the repo's
   documentation convention.
+
+## 11. Planned side tool: querying providers for current images
+
+**Status: planned, not implemented.** This section is the plan for a
+small companion tool; it can be built independently of the AWS work
+(the GCP half is useful today).
+
+### Why
+
+The preset table and any hand-written `vm.image` block go stale in two
+ways: a distro publishes a new release (Fedora moves from 44 to 45),
+or a family name changes shape (Ubuntu added the `-amd64` suffix at
+24.04). Today the only way to discover current names is to remember
+the right `gcloud` or `aws` incantation and then transcribe the answer
+into YAML by hand. A query tool closes that gap: it asks the cloud
+what images exist right now and prints the answer in exactly the form
+the config file wants, ready to paste.
+
+### What it is
+
+One script, `generator/list_images.py`, sitting next to `generate.py`.
+It shells out to the official CLIs (`gcloud` for GCP, `aws` for AWS)
+rather than calling REST APIs itself: the CLIs are already installed
+and authenticated on any machine that can deploy from this repo, and
+shelling out keeps `requirements.txt` at its current two entries
+(PyYAML and Jinja2). The tool is read-only — it only ever lists.
+
+Command line:
+
+```sh
+# Everything the preset table knows about, on one provider:
+python3 generator/list_images.py gcp
+python3 generator/list_images.py aws
+
+# One distro, or an arbitrary image project:
+python3 generator/list_images.py gcp --distro fedora
+python3 generator/list_images.py gcp --project fedora-cloud
+```
+
+With no `--distro`/`--project`, the tool walks the provider's
+`OS_PRESETS` table (imported from the provider module, so the two can
+never disagree about which projects matter) and reports every current,
+non-deprecated family in each preset's image project.
+
+### Output format
+
+The output is YAML, structured so a block can be pasted into
+`config/vm.yaml` under `vm:` without editing — the same shape the
+`image:` key already takes. Freshness details that do not belong in
+the config ride along as comments:
+
+```yaml
+# images on gcp, queried 2026-09-26
+# each "image:" block pastes into config/vm.yaml under vm:
+fedora:
+  # preset: fedora-44 (current)
+  image:
+    project: fedora-cloud
+    family: fedora-cloud-44-x86-64    # latest: fedora-cloud-44-...-v20260918
+  # newer family with no preset yet:
+  # image:
+  #   project: fedora-cloud
+  #   family: fedora-cloud-45-prerelease-x86-64
+rocky:
+  # preset: rocky-10 (current)
+  image:
+    project: rocky-linux-cloud
+    family: rocky-linux-10            # latest: rocky-linux-10-v20260910
+```
+
+On AWS the same shape holds, with the AWS `image:` vocabulary
+(`ssm_parameter:` or `ami_id:` as §5 defines it). A second mode,
+`--presets`, prints the provider's preset table as it *would* look if
+regenerated from live data — a maintenance aid for spotting drift in
+`OS_PRESETS` itself, not something to paste into a config.
+
+Two format rules keep the output trustworthy: every block is valid
+YAML that `yaml.safe_load` accepts (the tool's own test), and anything
+uncertain — prerelease families, deprecated-but-listed images — is
+emitted as a comment, never as an active key, so a blind paste can
+only ever pick up a working image reference.
+
+### Implementation and verification plan
+
+1. GCP support first: wrap
+   `gcloud compute images list --project <p> --format=json`, group by
+   family, drop deprecated images, emit the YAML above. Verify by
+   running it against the current preset projects and checking that
+   every emitted `image:` block, pasted into a copy of the example
+   config (with `vm.os` removed), renders and passes
+   `tofu fmt`/`init -backend=false`/`validate`; parse the whole output
+   with `yaml.safe_load`.
+2. AWS support lands with phase 3 of the main roadmap (it needs the
+   AWS `OS_PRESETS` table to exist): wrap
+   `aws ssm get-parameters-by-path` for the SSM-published distros and
+   `aws ec2 describe-images --owners <id>` for the Marketplace ones.
+3. Documentation in the same commit as each step: a short README
+   subsection under "Choosing the OS" ("finding current images"), and
+   an AGENTS.md layout row.
+
+The tool deliberately does **not** write to any config file and does
+not auto-update `OS_PRESETS`: image choices stay a deliberate,
+reviewed edit. It only makes the correct text trivial to obtain.
