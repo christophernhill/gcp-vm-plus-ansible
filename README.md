@@ -163,14 +163,29 @@ being landed phase by phase per
 [`docs/multi-provider-implementation-plan.md`](docs/multi-provider-implementation-plan.md).
 Landed so far: the phase-1 refactor (GCP-specific code in
 `generator/providers/gcp.py`, the GCP template in
-`generator/templates/gcp/`, byte-identical output) and phase 2 — the
-optional `provider:` key is now parsed (absent means `gcp`; `aws`
-fails cleanly with "not implemented yet"), the AWS example config is
-committed at `config/examples/vm-aws.yaml`, and the generator refuses
-to overwrite a `main.tf` that was generated for a different provider
-(`--force` overrides). Every workflow in this README is unchanged, and
-existing configs need no edits (a config without a `provider:` key is
-a GCP config by definition).
+`generator/templates/gcp/`, byte-identical output); phase 2 — the
+optional `provider:` key is parsed (absent means `gcp`), the AWS
+example config is committed at `config/examples/vm-aws.yaml`, and the
+generator refuses to overwrite a `main.tf` that was generated for a
+different provider (`--force` overrides); and phase 3 — `provider:
+aws` configs render real HCL from `generator/templates/aws/` that
+passes `tofu fmt -check` / `init -backend=false` / `validate`, with
+the same guardrails (RAM/disk floors, default-deny network, merged
+SSH keys) enforced in shared code.
+
+**AWS has never been deployed** — no AWS account has been contacted;
+the HCL is only validated offline. Until phase 4 verifies them against
+the real APIs, the Rocky/AlmaLinux/CentOS-Stream/Fedora presets carry
+placeholder AMI owner IDs that the generator refuses with a pointer to
+the design doc's open questions (so the committed `vm-aws.yaml`
+example, which uses `rocky-10`, does not render yet — switch `vm.os`
+to an SSM-backed preset like `ubuntu-24.04` to try it). Two behavioral
+differences to know before deploying: changing SSH keys on AWS
+**replaces the instance** (keys ride in `user_data`, with
+`user_data_replace_on_change = true`), and every public IPv4 address
+is an Elastic IP, billed ~$3.60/month each even when unattached.
+Existing GCP configs and workflows are unchanged (a config without a
+`provider:` key is a GCP config by definition).
 
 ## SSH keys for the base login
 

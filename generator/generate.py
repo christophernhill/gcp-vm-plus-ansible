@@ -13,12 +13,12 @@ from pathlib import Path
 import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from providers import gcp
+from providers import aws, gcp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
-PROVIDERS = {"gcp": gcp}
+PROVIDERS = {"gcp": gcp, "aws": aws}
 
 # OpenSSH public-key line: key type, base64 blob, optional comment.
 PUBLIC_KEY_RE = re.compile(r"^(sk-)?(ssh|ecdsa)-[a-z0-9@.-]+\s+\S+", re.IGNORECASE)
@@ -51,11 +51,6 @@ def fail(msg: str) -> None:
 
 def get_provider(cfg: dict):
     name = cfg.get("provider", "gcp")
-    if name == "aws":
-        fail(
-            "provider 'aws' is not implemented yet "
-            "(see docs/multi-provider-design.md)"
-        )
     if name not in PROVIDERS:
         fail(f"unknown provider {name!r}; valid: " + ", ".join(sorted(PROVIDERS)))
     return PROVIDERS[name]

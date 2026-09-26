@@ -28,9 +28,10 @@ with `tofu`.
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `docs/multi-provider-design.md` | Design for AWS as an alternate provider (phase 1 of 5 landed) |
 | `docs/multi-provider-implementation-plan.md` | Phase-by-phase execution plan for that design, written for an implementing agent |
-| `generator/providers/` | One module per cloud (`gcp.py`; interface in design §3.2). `generate.py` keeps the shared core and picks the module via the `PROVIDERS` registry |
+| `generator/providers/` | One module per cloud (`gcp.py`, `aws.py`; interface in design §3.2). `generate.py` keeps the shared core and picks the module via the `PROVIDERS` registry |
 | `generator/templates/gcp/main.tf.j2` | OpenTofu HCL template (GCP) |
 | `generator/templates/gcp/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
+| `generator/templates/aws/` | AWS HCL template + IMDSv2 variant of the routing script (validated offline; never deployed) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
@@ -161,7 +162,31 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   first-line `provider: <name>` marker names another provider
   (marker-less files count as GCP; `--force` overrides). The GCP
   template must never gain a marker — that would break the
-  byte-identical rule.
+  byte-identical rule. Phase 3 has landed: `providers/aws.py` +
+  `templates/aws/{main.tf.j2,policy-routing.sh}` render real AWS HCL
+  (VPC/IGW/route table, one subnet per NIC, one security group,
+  SSM-parameter or aws_ami AMI resolution, EIP-backed addressing,
+  keys via cloud-init `user_data` with `user_data_replace_on_change`).
+  Verified offline only: all five SSM presets (ubuntu-24.04/22.04,
+  debian-13/12, amazon-linux-2023) plus the feature matrix
+  (`open_ports`, `external_ip_count: 3`, `nic_count: 2`, combined,
+  direct `ami_id`) pass `fmt -check`/`init -backend=false`/`validate`;
+  **never deployed — no AWS account contacted**. The eight
+  Marketplace/community presets carry `UNVERIFIED_AMI_OWNER`
+  placeholders that `validate` refuses with a §9 pointer, so the
+  committed `vm-aws.yaml` example (`os: rocky-10`) intentionally does
+  not render until phase 4 verifies owner IDs. Phase-3 implementation
+  notes: `render_context` also supplies single-line HCL expressions
+  (`ami_expression`, `public_ip_expr`, `public_ips_expr`,
+  `ssh_command_expr` — the last built in Python because a literal `${`
+  collides with Jinja's `{{`); the explicit-ENI case gives the primary
+  ENI an Elastic IP for its base address too (pre-created ENIs disable
+  subnet auto-assign), so EIPs = `external_ip_count` + (`nic_count` −
+  1) there — one more than the plan's literal text, which would have
+  left the VM unreachable; `aws.py` calls back into `generate.py` for
+  key merging/`open_ports` via a lazy import (`_core()`); AWS limits
+  are `MAX_EXTERNAL_IPS = 5` (default EIP quota) and `MAX_NICS = 8`
+  (advisory only).
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).
