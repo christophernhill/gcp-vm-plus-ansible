@@ -1,0 +1,51 @@
+# Settings for a VM on AWS.
+#
+# This is the committed example. The generator reads the local copy,
+# which is gitignored:
+#     cp config/examples/vm-aws.yaml config/vm-aws.yaml
+# Edit the copy, then run:
+#     python3 generator/generate.py --config config/vm-aws.yaml --out build-aws
+
+provider: aws
+
+aws:
+  region: us-east-1
+  availability_zone: us-east-1a
+  # profile: my-sso-profile      # optional; omit to use env/default chain
+  # vpc_cidr: 10.10.0.0/16       # subnets are carved as 10.10.<i>.0/24
+
+network:
+  name: rocky10-net
+  # CIDRs allowed to reach SSH. The security group denies everything
+  # else inbound, so SSH and the open_ports list below are the only
+  # ways in.
+  ssh_source_ranges:
+    - 0.0.0.0/0
+  # Extra ports open to the public internet, same grammar as on GCP:
+  # port, "low-high" range, or tcp:/udp: prefix (plain entries are TCP).
+  open_ports: []
+
+vm:
+  name: rocky10-vm-aws
+  # m5.4xlarge = 16 vCPU / 64 GB RAM. The generator refuses instance
+  # types it can determine to have less than min_memory_gb.
+  machine_type: m5.4xlarge
+  min_memory_gb: 64
+  boot_disk_gb: 250
+  boot_disk_type: gp3               # gp3 | gp2 | io1 | io2
+  # Same meaning as on GCP but a different mechanism (see the design
+  # doc): each extra address is a secondary private IP with an Elastic
+  # IP attached.
+  external_ip_count: 1
+  # Extra ENIs; the limit depends on the instance type (advisory, not
+  # enforced).
+  nic_count: 1
+  # Same preset names as GCP; values resolve to AMI lookups.
+  os: rocky-10
+  # For any other AMI, delete vm.os and set vm.image instead:
+  # image:
+  #   ami_id: ami-0123456789abcdef0
+  # ssh_user: rocky
+  ssh_public_keys_file: config/base_authorized_keys
+  # ssh_public_key_file: ~/.ssh/id_ed25519.pub
+  # ssh_public_key: "ssh-ed25519 AAAA... user@host"

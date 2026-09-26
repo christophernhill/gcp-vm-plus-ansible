@@ -6,6 +6,8 @@
 # Edit the copy (at minimum gcp.project_id and an SSH key source), then
 # run: python3 generator/generate.py
 
+# provider: gcp      # the default; AWS configs set "provider: aws"
+
 gcp:
   project_id: my-gcp-project
   region: us-central1

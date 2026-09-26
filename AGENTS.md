@@ -154,9 +154,14 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   verified byte-identical against `build/main.tf` with a no-op
   `tofu plan`. Provider hooks raise `ValueError` (the core's
   `provider_call` wrapper turns it into `fail`); warnings print to
-  stderr. The generator remains GCP-only: the `PROVIDERS` registry has
-  just `gcp`, the `provider:` key is parsed but unadvertised, and
-  `provider: aws` fails with the unknown-provider error.
+  stderr. Phase 2 has landed: the `provider:` key is parsed (absent =
+  `gcp`; `aws` gets a deliberate "not implemented yet" stub), the AWS
+  example is committed at `config/examples/vm-aws.yaml`, and the
+  output-directory safeguard refuses to render over a `main.tf` whose
+  first-line `provider: <name>` marker names another provider
+  (marker-less files count as GCP; `--force` overrides). The GCP
+  template must never gain a marker — that would break the
+  byte-identical rule.
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).

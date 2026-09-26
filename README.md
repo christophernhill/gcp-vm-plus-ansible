@@ -161,11 +161,16 @@ as an alternate provider is fully specified in
 [`docs/multi-provider-design.md`](docs/multi-provider-design.md) and is
 being landed phase by phase per
 [`docs/multi-provider-implementation-plan.md`](docs/multi-provider-implementation-plan.md).
-So far only the phase-1 refactor is done: the GCP-specific code lives in
-`generator/providers/gcp.py` and the GCP template in
-`generator/templates/gcp/`, with byte-identical output. Every workflow
-in this README is unchanged, and existing configs need no edits (a
-config without a `provider:` key is a GCP config by definition).
+Landed so far: the phase-1 refactor (GCP-specific code in
+`generator/providers/gcp.py`, the GCP template in
+`generator/templates/gcp/`, byte-identical output) and phase 2 — the
+optional `provider:` key is now parsed (absent means `gcp`; `aws`
+fails cleanly with "not implemented yet"), the AWS example config is
+committed at `config/examples/vm-aws.yaml`, and the generator refuses
+to overwrite a `main.tf` that was generated for a different provider
+(`--force` overrides). Every workflow in this README is unchanged, and
+existing configs need no edits (a config without a `provider:` key is
+a GCP config by definition).
 
 ## SSH keys for the base login
 
