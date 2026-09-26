@@ -9,9 +9,11 @@
 #
 # "Since provisioning" is anchored, in order of preference, at: a
 # `date -d`-parsable timestamp passed as $1; the mtime of
-# /etc/google_instance_id (written at the instance's first boot —
-# /etc/machine-id can predate it when it is baked into the image);
-# or the mtime of /etc/machine-id.
+# /etc/google_instance_id (written at a GCP instance's first boot);
+# the mtime of /var/lib/cloud/instance (cloud-init's per-instance
+# directory, created at first boot — the AWS anchor); or the mtime of
+# /etc/machine-id (which can predate first boot when it is baked into
+# the image).
 #
 # Usage, from the machine that ran tofu apply (login = vm.ssh_user):
 #   scp -r provisioning <ssh_user>@$(tofu -chdir=build output -raw public_ip):
@@ -35,6 +37,11 @@ if [[ $# -ge 1 ]]; then
 elif [[ -f /etc/google_instance_id ]]; then
     ANCHOR_EPOCH=$(stat -c %Y /etc/google_instance_id)
     ANCHOR_SOURCE="instance first boot (mtime of /etc/google_instance_id)"
+elif [[ -d /var/lib/cloud/instance ]]; then
+    # Cloud-init's per-instance directory (a symlink to
+    # instances/<id>); created at first boot. The AWS anchor.
+    ANCHOR_EPOCH=$(stat -c %Y /var/lib/cloud/instance/)
+    ANCHOR_SOURCE="instance first boot (mtime of /var/lib/cloud/instance, cloud-init)"
 else
     ANCHOR_EPOCH=$(stat -c %Y /etc/machine-id)
     ANCHOR_SOURCE="first boot (mtime of /etc/machine-id)"

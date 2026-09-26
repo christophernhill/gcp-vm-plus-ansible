@@ -16,77 +16,85 @@ REQUIRED_KEYS = [
     ("aws", "availability_zone"),
 ]
 
-# Placeholder for AMI owner IDs the design doc has not verified yet
-# (section 9, item 2). validate() refuses any image that uses it, so an
-# unverified preset cannot be rendered for deployment by accident.
+# Placeholder for AMI owner IDs that have not been verified against the
+# live AWS API yet (design doc section 9, item 2). validate() refuses any
+# image that uses it, so an unverified preset cannot be rendered for
+# deployment by accident. All current presets are verified (2026-09-26);
+# keep this pattern for any future preset whose owner is unconfirmed.
 UNVERIFIED_AMI_OWNER = "000000000000-unverified"
 
 # vm.os presets: image dict + default ssh_user. The image dict is either
 # {"ssm_parameter": ...} (Ubuntu, Debian, and Amazon Linux publish their
 # latest AMI IDs in public SSM parameters) or {"ami_owner": ...,
-# "ami_name_filter": ...} (Marketplace/community images). All values are
-# indicative and unverified - see design doc section 9; phase 4 confirms
-# them against the real APIs.
+# "ami_name_filter": ...} (Marketplace/community images). SSM paths,
+# owner IDs, and name filters verified against us-east-1 on 2026-09-26,
+# and every default ssh_user confirmed by booting the AMI (design doc
+# §9). Note the AlmaLinux/CentOS names contain literal spaces. Rocky
+# images carry Marketplace product codes: the first apply needs the
+# product's subscription accepted in the AWS console (once per account),
+# and the Rocky product does not support burstable (t2/t3) instance
+# types. Alma, CentOS Stream, and Fedora are plain community AMIs (no
+# product codes).
 OS_PRESETS = {
     "ubuntu-24.04": (
-        {"ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"},  # unverified - see design doc §9
+        {"ssm_parameter": "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"},
         "ubuntu",
     ),
     "ubuntu-22.04": (
-        {"ssm_parameter": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"},  # unverified - see design doc §9
+        {"ssm_parameter": "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id"},
         "ubuntu",
     ),
     "debian-13": (
-        {"ssm_parameter": "/aws/service/debian/release/13/latest/amd64"},  # unverified - see design doc §9
+        {"ssm_parameter": "/aws/service/debian/release/13/latest/amd64"},
         "admin",
     ),
     "debian-12": (
-        {"ssm_parameter": "/aws/service/debian/release/12/latest/amd64"},  # unverified - see design doc §9
+        {"ssm_parameter": "/aws/service/debian/release/12/latest/amd64"},
         "admin",
     ),
     "amazon-linux-2023": (
-        {"ssm_parameter": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"},  # unverified - see design doc §9
+        {"ssm_parameter": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"},
         "ec2-user",
     ),
     "rocky-10": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "Rocky-10-EC2-Base-*x86_64"},  # unverified - see design doc §9
+        {"ami_owner": "679593333241",
+         "ami_name_filter": "Rocky-10-EC2-Base-*x86_64*"},
         "rocky",
     ),
     "rocky-9": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "Rocky-9-EC2-Base-*x86_64"},  # unverified - see design doc §9
+        {"ami_owner": "679593333241",
+         "ami_name_filter": "Rocky-9-EC2-Base-*x86_64*"},
         "rocky",
     ),
     "almalinux-10": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "AlmaLinux-OS-10-*x86_64*"},  # unverified - see design doc §9
-        "ec2-user",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "764336703387",
+         "ami_name_filter": "AlmaLinux OS 10.* x86_64"},
+        "ec2-user",  # confirmed by boot test 2026-09-26
     ),
     "almalinux-9": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "AlmaLinux-OS-9-*x86_64*"},  # unverified - see design doc §9
-        "ec2-user",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "764336703387",
+         "ami_name_filter": "AlmaLinux OS 9.* x86_64"},
+        "ec2-user",  # confirmed by boot test 2026-09-26 (10; 9 same vendor)
     ),
     "centos-stream-10": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "CentOS-Stream-10-*x86_64*"},  # unverified - see design doc §9
-        "centos",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "125523088429",
+         "ami_name_filter": "CentOS Stream 10 x86_64*"},
+        "ec2-user",  # confirmed by boot test 2026-09-26 (NOT "centos")
     ),
     "centos-stream-9": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "CentOS-Stream-9-*x86_64*"},  # unverified - see design doc §9
-        "centos",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "125523088429",
+         "ami_name_filter": "CentOS Stream 9 x86_64*"},
+        "ec2-user",  # confirmed by boot test 2026-09-26 (10; 9 same vendor)
     ),
     "fedora-44": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "Fedora-Cloud-Base-AmazonEC2.x86_64-44-*"},  # unverified - see design doc §9
-        "fedora",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "125523088429",
+         "ami_name_filter": "Fedora-Cloud-Base-AmazonEC2.x86_64-44-*"},
+        "fedora",  # confirmed by boot test 2026-09-26
     ),
     "fedora-43": (
-        {"ami_owner": UNVERIFIED_AMI_OWNER,
-         "ami_name_filter": "Fedora-Cloud-Base-AmazonEC2.x86_64-43-*"},  # unverified - see design doc §9
-        "fedora",  # unconfirmed - see design doc §9 item 2
+        {"ami_owner": "125523088429",
+         "ami_name_filter": "Fedora-Cloud-Base-AmazonEC2.x86_64-43-*"},
+        "fedora",  # confirmed by boot test 2026-09-26 (44; 43 same vendor)
     ),
 }
 
@@ -101,14 +109,16 @@ VCPUS = {
 }
 MACHINE_TYPE_RE = re.compile(r"^([a-z])[a-z0-9]*\.([a-z0-9]+)$")
 
-# Cap on vm.external_ip_count. AWS accounts start with a quota of 5
-# Elastic IPs per region (design doc section 9, item 5); every external
-# address here is an EIP, including the primary's when ENIs are explicit.
+# Cap on vm.external_ip_count. Verified 2026-09-26: this account's
+# Elastic IP quota is 5 per region (the AWS default; design doc section
+# 9, item 5). Every external address here is an EIP, including the
+# primary's when ENIs are explicit.
 MAX_EXTERNAL_IPS = 5
 
-# Cap on vm.nic_count. ENI limits depend on the instance type (m5.4xlarge
-# is believed to allow 8 — design doc section 9, item 3), so validate()
-# only warns; this cap is just a sanity bound.
+# Cap on vm.nic_count. ENI limits depend on the instance type (verified
+# 2026-09-26: m5.4xlarge allows 8 ENIs and 30 IPv4 addresses per ENI —
+# design doc section 9, item 3), so validate() only warns; this cap is
+# just a sanity bound.
 MAX_NICS = 8
 
 
@@ -297,15 +307,16 @@ def render_context(cfg: dict) -> dict:
         public_ips_expr = "[aws_instance.vm.public_ip]"
     else:
         # Explicit ENIs get no auto-assigned public IP, so every public
-        # address is an Elastic IP.
-        public_ip_expr = "aws_eip.primary[0].address"
+        # address is an Elastic IP. (aws_eip's "address" attribute is
+        # null for VPC-domain EIPs; "public_ip" is the one to use.)
+        public_ip_expr = "aws_eip.primary[0].public_ip"
         if vm["nic_count"] > 1:
             public_ips_expr = (
-                "concat(aws_eip.primary[*].address, "
-                "aws_eip.secondary[*].address)"
+                "concat(aws_eip.primary[*].public_ip, "
+                "aws_eip.secondary[*].public_ip)"
             )
         else:
-            public_ips_expr = "aws_eip.primary[*].address"
+            public_ips_expr = "aws_eip.primary[*].public_ip"
 
     return {
         "user_data": "\n".join(lines),

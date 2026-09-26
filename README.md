@@ -89,11 +89,15 @@ whose existing `main.tf` names another (`--force` overrides) — an AWS
 run can never clobber the GCP `build/` directory by a forgotten
 `--out` flag.
 
-**AWS status: rendered and `tofu validate`-clean, but never deployed.**
-No AWS account has been contacted; the Rocky/AlmaLinux/CentOS/Fedora
-presets are refused as unverified (see the next section), and the
-first real deployment is pending credentials and a scratch account
-(phase 4 of `docs/multi-provider-implementation-plan.md`).
+**AWS status: deployed and verified** (2026-09-26, us-east-1): the
+example config was applied end-to-end (SSH with the merged key list,
+`open_ports` behavior), a second config with `external_ip_count: 3` +
+`nic_count: 2` answered SSH on every address, key rotation was
+confirmed to replace the instance, and everything was torn down
+afterwards. One cosmetic note: with the SSM-backed presets (Ubuntu,
+Debian, Amazon Linux), `tofu plan` shows `ami = (sensitive value)` —
+the AWS provider marks SSM parameter values sensitive; the AMI ID is
+not actually secret.
 
 ## Choosing the OS
 
@@ -104,29 +108,32 @@ what they resolve to differs:
 
 | `vm.os` | GCP image (project/family) | AWS image lookup | default `ssh_user` (GCP / AWS) |
 |---|---|---|---|
-| `rocky-10` (example default) | rocky-linux-cloud/rocky-linux-10 | name filter `Rocky-10-EC2-Base-*x86_64` ¹ | `rocky` |
-| `rocky-9` | rocky-linux-cloud/rocky-linux-9 | name filter `Rocky-9-EC2-Base-*x86_64` ¹ | `rocky` |
-| `almalinux-10` | almalinux-cloud/almalinux-10 | name filter `AlmaLinux-OS-10-*x86_64*` ¹ | `almalinux` / `ec2-user` ² |
-| `almalinux-9` | almalinux-cloud/almalinux-9 | name filter `AlmaLinux-OS-9-*x86_64*` ¹ | `almalinux` / `ec2-user` ² |
-| `centos-stream-10` | centos-cloud/centos-stream-10 | name filter `CentOS-Stream-10-*x86_64*` ¹ | `centos` ² |
-| `centos-stream-9` | centos-cloud/centos-stream-9 | name filter `CentOS-Stream-9-*x86_64*` ¹ | `centos` ² |
-| `fedora-44` | fedora-cloud/fedora-cloud-44-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-44-*` ¹ | `fedora` ² |
-| `fedora-43` | fedora-cloud/fedora-cloud-43-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-43-*` ¹ | `fedora` ² |
+| `rocky-10` (example default) | rocky-linux-cloud/rocky-linux-10 | name filter `Rocky-10-EC2-Base-*x86_64*` ¹ | `rocky` |
+| `rocky-9` | rocky-linux-cloud/rocky-linux-9 | name filter `Rocky-9-EC2-Base-*x86_64*` ¹ | `rocky` |
+| `almalinux-10` | almalinux-cloud/almalinux-10 | name filter `AlmaLinux OS 10.* x86_64` (spaces) | `almalinux` / `ec2-user` ² |
+| `almalinux-9` | almalinux-cloud/almalinux-9 | name filter `AlmaLinux OS 9.* x86_64` (spaces) | `almalinux` / `ec2-user` ² |
+| `centos-stream-10` | centos-cloud/centos-stream-10 | name filter `CentOS Stream 10 x86_64*` (spaces) | `centos` / `ec2-user` ² |
+| `centos-stream-9` | centos-cloud/centos-stream-9 | name filter `CentOS Stream 9 x86_64*` (spaces) | `centos` / `ec2-user` ² |
+| `fedora-44` | fedora-cloud/fedora-cloud-44-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-44-*` | `fedora` |
+| `fedora-43` | fedora-cloud/fedora-cloud-43-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-43-*` | `fedora` |
 | `ubuntu-24.04` | ubuntu-os-cloud/ubuntu-2404-lts-amd64 | SSM `/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id` | `ubuntu` |
 | `ubuntu-22.04` | ubuntu-os-cloud/ubuntu-2204-lts | SSM `.../server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id` | `ubuntu` |
 | `debian-13` | debian-cloud/debian-13 | SSM `/aws/service/debian/release/13/latest/amd64` | `debian` / `admin` |
 | `debian-12` | debian-cloud/debian-12 | SSM `/aws/service/debian/release/12/latest/amd64` | `debian` / `admin` |
 | `amazon-linux-2023` | — (AWS only; no GCP images exist) | SSM `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | `ec2-user` |
 
-¹ **Unverified AWS preset**: the AMI owner ID is a placeholder that the
-generator refuses with a pointer to the design doc's open questions
-(§9) until it is verified against the real AWS API — so these presets
-cannot be deployed yet. Once verified, the first `apply` with a
-Marketplace AMI additionally requires accepting the product's AWS
-Marketplace subscription in the console (one time per account).
+¹ The Rocky AMIs are AWS Marketplace products: the first `apply` fails
+with `OptInRequired` until someone accepts the product's subscription
+in the AWS console (one time per account, free; the error message
+includes the product-page URL). The Rocky product also rejects
+burstable (t2/t3) instance types — a non-issue here, since the 64 GB
+RAM guardrail already rules them out. AlmaLinux, CentOS Stream, and
+Fedora are plain community AMIs needing no subscription.
 
-² Where the clouds differ, the value is GCP / AWS; the AWS login users
-for almalinux, centos-stream, and fedora are unconfirmed (§9).
+² Where the clouds differ, the value is GCP / AWS. All AWS login users
+were verified by booting the AMIs (2026-09-26) — note CentOS Stream's
+is `ec2-user`, not `centos`. All AWS owner IDs and name filters were
+verified against the live API the same day.
 
 For any other image, drop `vm.os` and set `vm.image` directly (the two
 are mutually exclusive). On GCP: `vm.image.project` +
@@ -244,7 +251,7 @@ rationale live in
 | Step | GCP | AWS |
 |---|---|---|
 | One-time auth | `gcloud auth login` + `gcloud auth application-default login` | `aws configure` or an SSO profile; the standard credential chain |
-| One-time account prep | enable `compute.googleapis.com` | accept the Marketplace subscription if using a Rocky/Alma preset (once verified) |
+| One-time account prep | enable `compute.googleapis.com` | accept the Marketplace subscription if using a Rocky preset |
 | Copy the example | `cp config/examples/vm.yaml config/vm.yaml` | `cp config/examples/vm-aws.yaml config/vm-aws.yaml` |
 | Generate | `.venv/bin/python generator/generate.py` | `.venv/bin/python generator/generate.py --config config/vm-aws.yaml --out build-aws` |
 | Verify (offline) | `tofu -chdir=build fmt -check && tofu -chdir=build init -backend=false -input=false && tofu -chdir=build validate` | the same three commands with `-chdir=build-aws` |
@@ -339,9 +346,10 @@ ssh rocky@"$IP" 'sudo bash provisioning/capture.sh' > vm-state.txt
 ```
 
 The "since" anchor defaults to the instance's first boot (the mtime of
-`/etc/google_instance_id`, falling back to `/etc/machine-id`, whose
-mtime can be the image build); pass any `date -d`-parsable timestamp
-to override:
+`/etc/google_instance_id` on GCP, then `/var/lib/cloud/instance` —
+cloud-init's per-instance directory — on AWS and other clouds, falling
+back to `/etc/machine-id`, whose mtime can be the image build); pass
+any `date -d`-parsable timestamp to override:
 
 ```sh
 ssh rocky@"$IP" 'sudo bash provisioning/capture.sh "2026-09-23 12:00"'
@@ -402,7 +410,6 @@ The `aws` provider uses the standard AWS credential chain: the
 `AWS_SECRET_ACCESS_KEY`, or `~/.aws/credentials` (written by
 `aws configure`, or `aws login` for SSO). Set the optional
 `aws.profile` key in the config to pin a named profile into the
-provider block. One-time account prep: if you use a Rocky or AlmaLinux
-preset (once their owner IDs are verified — see "Choosing the OS"),
+provider block. One-time account prep: if you use a Rocky preset,
 accept the product's AWS Marketplace subscription in the console
-first; the initial apply fails without it.
+first; the initial apply fails without it (see "Choosing the OS").

@@ -1,16 +1,14 @@
 # Multi-provider design: AWS as an alternate provider
 
-**Status: implemented, except the live AWS deployment.** Phases 1–3
-and 5 of `docs/multi-provider-implementation-plan.md` have landed: the
-provider interface, the `provider:` key, the output-directory
-safeguard, the AWS provider module and templates, and the
-two-provider documentation. Phase 4 — the first real AWS deployment,
-which resolves the §9 open questions against the live APIs — is
-pending working AWS credentials and has never been run; until it
-completes, the Marketplace-backed presets are refused as unverified
-and every AWS-specific statement in this document should be read as
-"validated offline, not yet exercised". The GCP VM already deployed
-from this repository has kept working, untouched, throughout: its
+**Status: implemented.** All five phases of
+`docs/multi-provider-implementation-plan.md` have landed, including
+the phase-4 live AWS deployment (2026-09-26, us-east-1): the example
+config deployed end-to-end (multi-key SSH, `open_ports`), a second
+config exercised `external_ip_count: 3` and `nic_count: 2` with all
+addresses answering SSH, key rotation was confirmed to replace the
+instance, and everything was torn down afterwards. The §9 open
+questions are all resolved (answers inline below). The GCP VM already
+deployed from this repository kept working, untouched, throughout: its
 config still renders byte-identically and `tofu plan` reports no
 changes.
 
@@ -572,22 +570,27 @@ AlmaLinux publish through the AWS Marketplace
 instead, so those presets use a `data "aws_ami"` block that filters by
 the vendor's owner ID and a name pattern and picks the newest match.
 
-| preset | AWS source (indicative — verify, §9) | default `ssh_user` |
+| preset | AWS source (verified 2026-09-26, us-east-1) | default `ssh_user` |
 |---|---|---|
 | `ubuntu-24.04` | SSM `/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id` | `ubuntu` |
 | `ubuntu-22.04` | SSM `/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id` | `ubuntu` |
 | `debian-13` / `debian-12` | SSM `/aws/service/debian/release/<13\|12>/latest/amd64` | `admin` |
 | `amazon-linux-2023` — AWS only, no GCP images exist | SSM `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | `ec2-user` |
-| `rocky-10` / `rocky-9` | `data.aws_ami`: official Rocky owner + name filter `Rocky-<10\|9>-EC2-Base-*x86_64` | `rocky` |
-| `almalinux-10` / `almalinux-9` | `data.aws_ami`: official Alma owner + name filter | `ec2-user` (unconfirmed — §9 item 2) |
-| `centos-stream-10` / `centos-stream-9` | `data.aws_ami`: official CentOS owner + name filter | `centos` (unconfirmed — §9 item 2) |
-| `fedora-44` / `fedora-43` | `data.aws_ami`: Fedora project owner + name filter | `fedora` (unconfirmed — §9 item 2) |
+| `rocky-10` / `rocky-9` | `data.aws_ami`: owner `679593333241` + name filter `Rocky-<10\|9>-EC2-Base-*x86_64*` (Marketplace product — subscription required) | `rocky` (boot-verified) |
+| `almalinux-10` / `almalinux-9` | `data.aws_ami`: owner `764336703387` + name filter `AlmaLinux OS <10\|9>.* x86_64` (note the spaces; community AMI, no subscription) | `ec2-user` (boot-verified) |
+| `centos-stream-10` / `centos-stream-9` | `data.aws_ami`: owner `125523088429` + name filter `CentOS Stream <10\|9> x86_64*` (spaces; community AMI) | `ec2-user` (boot-verified — **not** `centos`) |
+| `fedora-44` / `fedora-43` | `data.aws_ami`: owner `125523088429` + name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-<44\|43>-*` (community AMI) | `fedora` (boot-verified) |
 
-The Marketplace route has a wrinkle with no GCP equivalent, and the
-README must say so prominently once this is implemented: the first
-`tofu apply` that uses a Rocky or Alma AMI fails until someone has
-accepted that product's Marketplace subscription in the AWS console — a
-one-time, per-account, manual step.
+The Marketplace route has a wrinkle with no GCP equivalent: the first
+`tofu apply` that uses a Rocky AMI fails until someone has accepted the
+product's Marketplace subscription in the AWS console — a one-time,
+per-account, manual step. (Verified: the error is `OptInRequired: In
+order to use this AWS Marketplace product you need to accept terms and
+subscribe`, with the product page URL in the message. Also verified:
+the Rocky product rejects burstable instance types — t2/t3 fail with
+`UnsupportedOperation` — which the 64 GB RAM guardrail already rules
+out in practice. AlmaLinux, CentOS Stream, and Fedora need no
+subscription: their AMIs carry no product codes.)
 
 The escape hatch mirrors GCP: drop `vm.os` and set `vm.image` directly,
 with `ami_id: ami-...` (or `ssm_parameter: /aws/service/...`) plus
@@ -689,43 +692,67 @@ VM's `config/vm.yaml` renders a byte-identical `build/main.tf`, and
    current-state sections are updated. This document's status header
    then changes to "implemented".
 
-## 9. Open questions, to be resolved before the phase noted
+## 9. Open questions — all resolved (phase 4, 2026-09-26)
 
-**Status (2026-09-26): all items remain open.** Phase 4 has not run
-(no working AWS credentials yet); the implementing code ships the
-indicative values below, with the Marketplace owner IDs as
-placeholders that `providers/aws.py:validate()` refuses until verified.
+Every item below was resolved against the live AWS APIs (us-east-1,
+account 829860302847) during phase 4; the answers are folded into
+`providers/aws.py`, §5, and the README. Original question text kept
+for the record, answers appended.
 
 1. The exact SSM parameter paths for Ubuntu 24.04/22.04, Debian 12/13,
    and Amazon Linux 2023, and whether Debian 13 is published there yet
-   (phase 3).
+   (phase 3). — **All five paths in §5 are correct and resolve to real
+   AMI IDs; Debian 13 is published.**
 2. AMI owner IDs, name-filter patterns, and default login users for
-   Rocky, Alma, CentOS Stream, and Fedora — `rocky` is assumed for
-   Rocky; `ec2-user` (Alma), `centos`, and `fedora` are unconfirmed —
-   plus which of these require a Marketplace subscription (CentOS and
-   Fedora publish plain community AMIs, which would skip the
-   subscription-acceptance step) and the exact text of the
-   subscription-not-accepted failure (phases 3–4).
+   Rocky, Alma, CentOS Stream, and Fedora — plus which of these require
+   a Marketplace subscription and the exact text of the
+   subscription-not-accepted failure (phases 3–4). — **Resolved; see
+   the §5 table. Only Rocky carries Marketplace product codes
+   (subscription required; the failure is `OptInRequired` with the
+   product-page URL in the message, and the Rocky product rejects
+   t2/t3 burstable types with `UnsupportedOperation`). Alma, CentOS
+   Stream, and Fedora are plain community AMIs. Login users were
+   boot-verified: `rocky`, `ec2-user` (Alma *and* CentOS Stream — the
+   assumed `centos` was wrong), `fedora`. Note the AlmaLinux and
+   CentOS AMI names contain literal spaces.**
 3. ENI and secondary-IP limits for the recommended instance types
    (m5.4xlarge is believed to allow 8 ENIs and 30 addresses per ENI),
    which set the AWS values of `MAX_NICS` and `MAX_EXTERNAL_IPS`
-   (phase 3).
+   (phase 3). — **Confirmed exactly as believed
+   (`describe-instance-types`): 8 ENIs, 30 IPv4 per ENI. `MAX_NICS = 8`
+   stays advisory; `MAX_EXTERNAL_IPS` stays quota-bound (item 5).**
 4. The static memory tables against real instance specifications, and
    the choice of `m5.4xlarge` (16 vCPU / 64 GB) as the example default
-   (phase 3).
+   (phase 3). — **Spot-checked against `describe-instance-types`:
+   m5.4xlarge = 65536 MiB, and t3.large / c5.xlarge / r5.xlarge /
+   m5.large / m5.24xlarge all match the tables.**
 5. The default Elastic IP quota (five per region) versus
-   `MAX_EXTERNAL_IPS`: cap lower on AWS, or document the quota-increase
-   path (phase 3).
+   `MAX_EXTERNAL_IPS`: cap lower on AWS, or document the
+   quota-increase path (phase 3). — **Quota confirmed at 5
+   (`service-quotas`, code `L-0263D0A3`); `MAX_EXTERNAL_IPS = 5` with a
+   comment pointing at the quota-increase path.**
 6. The exact semantics of `user_data_replace_on_change` for the
    key-rotation story — is replacement required, or does a stop/start
-   suffice (phase 4).
+   suffice (phase 4). — **Verified: adding a key makes `tofu plan`
+   report `aws_instance.vm must be replaced` (user_data forces
+   replacement). That is the documented behavior.**
 7. A first-boot anchor for `capture.sh` on AWS, where
-   `/etc/google_instance_id` does not exist. The likely candidate is
-   the mtime of cloud-init's `/var/lib/cloud/instances/<instance-id>`
-   directory, falling back to `/etc/machine-id` as today (phase 4).
+   `/etc/google_instance_id` does not exist (phase 4). —
+   **Implemented as designed: the mtime of `/var/lib/cloud/instance`
+   (cloud-init's per-instance directory symlink), falling back to
+   `/etc/machine-id`. Verified on AlmaLinux 10.2.**
 8. The AWS provider marks `data.aws_ssm_parameter` values as
-   sensitive, so plans would show `ami = (sensitive value)`. Decide
-   whether to accept that or to resolve the AMI another way (phase 3).
+   sensitive, so plans would show `ami = (sensitive value)` (phase 3).
+   — **Confirmed real. Accepted: the AMI ID is not actually secret,
+   and the alternative (name-filter lookups for Ubuntu/Debian too)
+   would lose the canonical SSM freshness. Noted in the README.**
+
+Two further findings from the live testing, both fixed in the
+template: `aws_eip.address` is null for VPC-domain EIPs (the attribute
+to use is `public_ip`), and fixing specific private addresses via
+`private_ip_list` fights the ENI's immutable primary IP — the template
+uses `private_ips_count` (auto-assigned secondaries) and has the EIP
+associations index the `private_ip_list` attribute instead.
 
 ## 10. What the documentation looks like afterwards
 

@@ -31,7 +31,7 @@ with `tofu`.
 | `generator/providers/` | One module per cloud (`gcp.py`, `aws.py`; interface in design §3.2). `generate.py` keeps the shared core and picks the module via the `PROVIDERS` registry |
 | `generator/templates/gcp/main.tf.j2` | OpenTofu HCL template (GCP) |
 | `generator/templates/gcp/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
-| `generator/templates/aws/` | AWS HCL template + IMDSv2 variant of the routing script (validated offline; never deployed) |
+| `generator/templates/aws/` | AWS HCL template + IMDSv2 variant of the routing script (deployed and verified 2026-09-26) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
 | `build/` | Generated `main.tf` + tofu state. Gitignored — never edit or commit |
 | `.venv/` | Local venv with PyYAML + Jinja2 (gitignored) |
@@ -91,9 +91,9 @@ with `tofu`.
   google-guest-agent auto-installs local routes for forwarded IPs.
   With the default count of 1, the rendered HCL has no forwarding
   resources at all.
-- **Multi-provider is implemented per the design doc** (phases 1–3 and
-  5 of `docs/multi-provider-implementation-plan.md`; phase 4, the live
-  AWS deployment, is pending — see current state). The load-bearing
+- **Multi-provider is implemented per the design doc** (all five
+  phases of `docs/multi-provider-implementation-plan.md`, including
+  the phase-4 live AWS deployment — see current state). The load-bearing
   decisions: the `provider:` config key defaults to `gcp` via the
   `PROVIDERS` registry in `generate.py`, so a config without the key is
   a GCP config forever; there is **one whole-file template per
@@ -158,41 +158,44 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   `config/rocky_authorized_keys` (the setting is explicit in their
   `vm.yaml`, so it keeps working); the example was renamed to
   `base_authorized_keys` when OS presets landed.
-- **Multi-provider (AWS): phases 1–3 and 5 landed; phase 4 is blocked
-  on credentials** (2026-09-26). The provider interface, the
-  `provider:` key, the output-directory safeguard, the AWS provider +
-  templates, and the two-provider docs are all in. **AWS has never
-  been deployed — no AWS account contacted**; the AWS path is verified
-  offline only (all five SSM presets — ubuntu-24.04/22.04,
-  debian-13/12, amazon-linux-2023 — plus the feature matrix:
-  `open_ports`, `external_ip_count: 3`, `nic_count: 2`, combined,
-  direct `ami_id`; all pass `fmt -check`/`init -backend=false`/
-  `validate`). Phase 4 (see the implementation plan) requires working
-  AWS credentials and the user's go-ahead; on 2026-09-26
-  `aws sts get-caller-identity` failed with an expired session and the
-  user chose to record the block rather than re-authenticate. When
-  unblocked, phase 4 resolves the design §9 open items (SSM paths, AMI
-  owner IDs and name filters, default login users, ENI/EIP limits),
-  deploys to a scratch account, live-tests the IMDSv2 routing script
-  and key merge, adds the `capture.sh` cloud-init anchor
-  (`/var/lib/cloud/instances/<id>` mtime), folds the answers back into
-  design §5/§9, and tears everything down. Until then, the eight
-  Marketplace/community presets carry `UNVERIFIED_AMI_OWNER`
-  placeholders that `validate` refuses with a §9 pointer, so the
-  committed `vm-aws.yaml` example (`os: rocky-10`) intentionally does
-  not render — use an SSM-backed preset to try the AWS path. Phase-3
-  implementation notes: `render_context` also supplies single-line HCL
-  expressions (`ami_expression`, `public_ip_expr`, `public_ips_expr`,
+- **Multi-provider (AWS): all five phases landed** (2026-09-26). Phase
+  4 ran against the real account (829860302847, us-east-1): the example
+  config deployed end-to-end (SSH as the preset user with both merged
+  keys — file + inline sources; `open_ports` verified by refused-vs-
+  timed-out probes), a second config with `external_ip_count: 3` +
+  `nic_count: 2` answered SSH on all four addresses from a clean apply
+  (first live test of the IMDSv2 `policy-routing.sh` — it also
+  configures the secondary private IPs, which no stock AMI does), key
+  rotation was confirmed to force instance replacement, `capture.sh`
+  gained the cloud-init anchor (`/var/lib/cloud/instance` mtime,
+  between `google_instance_id` and `machine-id`), and everything was
+  torn down afterwards (states empty; the one EIP still allocated in
+  the account belongs to someone else's project — do not release it).
+  All design §9 items are resolved (answers inline in §9): SSM paths
+  all correct; Rocky = owner 679593333241, Marketplace subscription
+  required (`OptInRequired`, product-page URL in the error) and no
+  t2/t3 support (`UnsupportedOperation`); Alma (764336703387) and
+  CentOS Stream + Fedora (125523088429) are community AMIs — note the
+  Alma/CentOS name filters contain literal spaces; login users
+  boot-verified (`rocky`, `ec2-user` for Alma **and CentOS** — not
+  `centos`, `fedora`); m5.4xlarge = 8 ENIs / 30 IPv4-per-ENI / 64 GiB;
+  EIP quota = 5; SSM-resolved AMIs show as `(sensitive value)` in
+  plans (accepted, cosmetic). Two template bugs were found only by the
+  live apply and fixed: `aws_eip.address` is null for VPC EIPs (use
+  `public_ip`), and fixed `private_ip_list` addresses fight the ENI's
+  immutable primary IP (switched to `private_ips_count` + indexing the
+  `private_ip_list` attribute in the EIP associations). Phase-3 notes:
+  `render_context` also supplies single-line HCL expressions
+  (`ami_expression`, `public_ip_expr`, `public_ips_expr`,
   `ssh_command_expr` — the last built in Python because a literal `${`
   collides with Jinja's `{{`); the explicit-ENI case gives the primary
   ENI an Elastic IP for its base address too (pre-created ENIs disable
   subnet auto-assign), so EIPs = `external_ip_count` + (`nic_count` −
-  1) there — one more than the plan's literal text, which would have
-  left the VM unreachable; `aws.py` calls back into `generate.py` for
-  key merging/`open_ports` via a lazy import (`_core()`); AWS limits
-  are `MAX_EXTERNAL_IPS = 5` (default EIP quota) and `MAX_NICS = 8`
-  (advisory only). The GCP template must never gain a provider marker
-  — that would break the byte-identical rule.
+  1) there; `aws.py` calls back into `generate.py` for key
+  merging/`open_ports` via a lazy import (`_core()`); AWS limits are
+  `MAX_EXTERNAL_IPS = 5` (EIP quota) and `MAX_NICS = 8` (advisory).
+  The GCP template must never gain a provider marker — that would
+  break the byte-identical rule.
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).
