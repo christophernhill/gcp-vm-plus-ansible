@@ -26,6 +26,7 @@ with `tofu`.
 | `config/vm.yaml` | Single source of truth for all settings. Local copy of the example — gitignored |
 | `config/base_authorized_keys` | Initial public keys for the base login (`vm.ssh_user`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
+| `docs/multi-provider-design.md` | Design (not implemented) for AWS as an alternate provider |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
@@ -82,6 +83,13 @@ with `tofu`.
   google-guest-agent auto-installs local routes for forwarded IPs.
   With the default count of 1, the rendered HCL has no forwarding
   resources at all.
+- **Multi-provider support (AWS) is design-only** — the full
+  architecture lives in `docs/multi-provider-design.md`: `provider:`
+  config key defaulting to `gcp`, duck-typed provider modules under
+  `generator/providers/`, per-provider whole-file templates, guardrails
+  staying in core. If implementing it, follow the doc's five phases in
+  order (each ends with the byte-identical-render + plan-no-op check
+  against the deployed VM's config); do not implement piecemeal.
 - **Real extra NICs are a separate knob, `vm.nic_count`** (1–8, default
   1), for VMs that must show N interfaces in `ip a`. With count > 1 the
   VPC flips to `auto_create_subnetworks = false` with one
@@ -130,6 +138,10 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   `config/rocky_authorized_keys` (the setting is explicit in their
   `vm.yaml`, so it keeps working); the example was renamed to
   `base_authorized_keys` when OS presets landed.
+- **The multi-provider (AWS) design doc is committed but zero code has
+  changed for it** (2026-09-25): `docs/multi-provider-design.md` is the
+  spec; the generator remains GCP-only and `provider: aws` is not
+  recognized anywhere yet.
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).

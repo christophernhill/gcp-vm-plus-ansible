@@ -20,6 +20,7 @@ config/base_authorized_keys  initial public keys for the base login
                              gitignored
 generator/generate.py        loads + validates the YAML, renders the template
 generator/templates/main.tf.j2   OpenTofu HCL template
+docs/                        design documents (multi-provider architecture)
 provisioning/                material that runs on the VM after apply:
                              setup0.sh (admin accounts), capture.sh
                              (state report), keys/ (public keys)
@@ -139,6 +140,17 @@ cp config/vm.yaml config/vm2.yaml
 .venv/bin/python generator/generate.py --config config/vm2.yaml --out build2
 tofu -chdir=build2 init && tofu -chdir=build2 apply
 ```
+
+## Multiple providers (design)
+
+The generator currently targets GCP only. An architecture for adding AWS
+as an alternate provider is fully specified in
+[`docs/multi-provider-design.md`](docs/multi-provider-design.md): an
+optional `provider:` config key defaulting to `gcp`, provider modules
+under `generator/providers/`, per-provider templates and example configs,
+and a five-phase migration roadmap. **None of it is implemented yet** —
+every workflow in this README is unchanged, and existing configs need no
+edits (a config without a `provider:` key is a GCP config by definition).
 
 ## SSH keys for the base login
 
