@@ -1,10 +1,18 @@
 # Multi-provider design: AWS as an alternate provider
 
-**Status: design only.** This document describes a future architecture;
-none of it is implemented. The generator today produces GCP
-infrastructure only, and the GCP VM already deployed from this
-repository must keep working, untouched, while any part of this design
-is built.
+**Status: implemented, except the live AWS deployment.** Phases 1–3
+and 5 of `docs/multi-provider-implementation-plan.md` have landed: the
+provider interface, the `provider:` key, the output-directory
+safeguard, the AWS provider module and templates, and the
+two-provider documentation. Phase 4 — the first real AWS deployment,
+which resolves the §9 open questions against the live APIs — is
+pending working AWS credentials and has never been run; until it
+completes, the Marketplace-backed presets are refused as unverified
+and every AWS-specific statement in this document should be read as
+"validated offline, not yet exercised". The GCP VM already deployed
+from this repository has kept working, untouched, throughout: its
+config still renders byte-identically and `tofu plan` reports no
+changes.
 
 Two promises make up the compatibility contract, and everything else in
 this document is constrained by them:
@@ -682,6 +690,11 @@ VM's `config/vm.yaml` renders a byte-identical `build/main.tf`, and
    then changes to "implemented".
 
 ## 9. Open questions, to be resolved before the phase noted
+
+**Status (2026-09-26): all items remain open.** Phase 4 has not run
+(no working AWS credentials yet); the implementing code ships the
+indicative values below, with the Marketplace owner IDs as
+placeholders that `providers/aws.py:validate()` refuses until verified.
 
 1. The exact SSM parameter paths for Ubuntu 24.04/22.04, Debian 12/13,
    and Amazon Linux 2023, and whether Debian 13 is published there yet

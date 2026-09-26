@@ -26,7 +26,7 @@ with `tofu`.
 | `config/vm.yaml` | Single source of truth for all settings. Local copy of the example — gitignored |
 | `config/base_authorized_keys` | Initial public keys for the base login (`vm.ssh_user`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
-| `docs/multi-provider-design.md` | Design for AWS as an alternate provider (phase 1 of 5 landed) |
+| `docs/multi-provider-design.md` | Design for AWS as an alternate provider (implemented except the phase-4 live deployment) |
 | `docs/multi-provider-implementation-plan.md` | Phase-by-phase execution plan for that design, written for an implementing agent |
 | `generator/providers/` | One module per cloud (`gcp.py`, `aws.py`; interface in design §3.2). `generate.py` keeps the shared core and picks the module via the `PROVIDERS` registry |
 | `generator/templates/gcp/main.tf.j2` | OpenTofu HCL template (GCP) |
@@ -91,13 +91,25 @@ with `tofu`.
   google-guest-agent auto-installs local routes for forwarded IPs.
   With the default count of 1, the rendered HCL has no forwarding
   resources at all.
-- **Multi-provider support (AWS) is design-only** — the full
-  architecture lives in `docs/multi-provider-design.md`: `provider:`
-  config key defaulting to `gcp`, duck-typed provider modules under
-  `generator/providers/`, per-provider whole-file templates, guardrails
-  staying in core. If implementing it, follow the doc's five phases in
-  order (each ends with the byte-identical-render + plan-no-op check
-  against the deployed VM's config); do not implement piecemeal.
+- **Multi-provider is implemented per the design doc** (phases 1–3 and
+  5 of `docs/multi-provider-implementation-plan.md`; phase 4, the live
+  AWS deployment, is pending — see current state). The load-bearing
+  decisions: the `provider:` config key defaults to `gcp` via the
+  `PROVIDERS` registry in `generate.py`, so a config without the key is
+  a GCP config forever; there is **one whole-file template per
+  provider** (`templates/<name>/main.tf.j2`), deliberately no shared
+  Jinja base; shared keys keep one name everywhere but hold values in
+  the **selected provider's vocabulary** (`vm.machine_type` is
+  `n2-standard-16` on GCP, `m5.4xlarge` on AWS — no translation layer);
+  the **guardrails stay in the shared core** (the core compares RAM
+  against `provider.machine_ram_gb()`, bounds the counts against
+  `provider.MAX_*`, owns key merging and `open_ports` parsing), so a
+  provider module cannot weaken them; and the **output-directory
+  safeguard** (first-line `provider: <name>` marker in generated
+  `main.tf`, marker-less = GCP, `--force` overrides) makes the
+  AWS-into-`build/` mistake a clean error. Provider hooks raise
+  `ValueError` (routed to `fail()` by the core's `provider_call`) and
+  print warnings to stderr.
 - **Real extra NICs are a separate knob, `vm.nic_count`** (1–8, default
   1), for VMs that must show N interfaces in `ip a`. With count > 1 the
   VPC flips to `auto_create_subnetworks = false` with one
@@ -146,38 +158,31 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   `config/rocky_authorized_keys` (the setting is explicit in their
   `vm.yaml`, so it keeps working); the example was renamed to
   `base_authorized_keys` when OS presets landed.
-- **Multi-provider implementation is under way** (2026-09-26):
-  `docs/multi-provider-implementation-plan.md` is the executing spec.
-  Phase 1 (extract the provider interface) has landed: GCP-specific
-  code moved into `generator/providers/gcp.py` (presets, RAM
-  inference, image-shape/nic-count/placeholder checks) and the two
-  template files into `generator/templates/gcp/` — a pure refactor,
-  verified byte-identical against `build/main.tf` with a no-op
-  `tofu plan`. Provider hooks raise `ValueError` (the core's
-  `provider_call` wrapper turns it into `fail`); warnings print to
-  stderr. Phase 2 has landed: the `provider:` key is parsed (absent =
-  `gcp`; `aws` gets a deliberate "not implemented yet" stub), the AWS
-  example is committed at `config/examples/vm-aws.yaml`, and the
-  output-directory safeguard refuses to render over a `main.tf` whose
-  first-line `provider: <name>` marker names another provider
-  (marker-less files count as GCP; `--force` overrides). The GCP
-  template must never gain a marker — that would break the
-  byte-identical rule. Phase 3 has landed: `providers/aws.py` +
-  `templates/aws/{main.tf.j2,policy-routing.sh}` render real AWS HCL
-  (VPC/IGW/route table, one subnet per NIC, one security group,
-  SSM-parameter or aws_ami AMI resolution, EIP-backed addressing,
-  keys via cloud-init `user_data` with `user_data_replace_on_change`).
-  Verified offline only: all five SSM presets (ubuntu-24.04/22.04,
-  debian-13/12, amazon-linux-2023) plus the feature matrix
-  (`open_ports`, `external_ip_count: 3`, `nic_count: 2`, combined,
-  direct `ami_id`) pass `fmt -check`/`init -backend=false`/`validate`;
-  **never deployed — no AWS account contacted**. The eight
+- **Multi-provider (AWS): phases 1–3 and 5 landed; phase 4 is blocked
+  on credentials** (2026-09-26). The provider interface, the
+  `provider:` key, the output-directory safeguard, the AWS provider +
+  templates, and the two-provider docs are all in. **AWS has never
+  been deployed — no AWS account contacted**; the AWS path is verified
+  offline only (all five SSM presets — ubuntu-24.04/22.04,
+  debian-13/12, amazon-linux-2023 — plus the feature matrix:
+  `open_ports`, `external_ip_count: 3`, `nic_count: 2`, combined,
+  direct `ami_id`; all pass `fmt -check`/`init -backend=false`/
+  `validate`). Phase 4 (see the implementation plan) requires working
+  AWS credentials and the user's go-ahead; on 2026-09-26
+  `aws sts get-caller-identity` failed with an expired session and the
+  user chose to record the block rather than re-authenticate. When
+  unblocked, phase 4 resolves the design §9 open items (SSM paths, AMI
+  owner IDs and name filters, default login users, ENI/EIP limits),
+  deploys to a scratch account, live-tests the IMDSv2 routing script
+  and key merge, adds the `capture.sh` cloud-init anchor
+  (`/var/lib/cloud/instances/<id>` mtime), folds the answers back into
+  design §5/§9, and tears everything down. Until then, the eight
   Marketplace/community presets carry `UNVERIFIED_AMI_OWNER`
   placeholders that `validate` refuses with a §9 pointer, so the
   committed `vm-aws.yaml` example (`os: rocky-10`) intentionally does
-  not render until phase 4 verifies owner IDs. Phase-3 implementation
-  notes: `render_context` also supplies single-line HCL expressions
-  (`ami_expression`, `public_ip_expr`, `public_ips_expr`,
+  not render — use an SSM-backed preset to try the AWS path. Phase-3
+  implementation notes: `render_context` also supplies single-line HCL
+  expressions (`ami_expression`, `public_ip_expr`, `public_ips_expr`,
   `ssh_command_expr` — the last built in Python because a literal `${`
   collides with Jinja's `{{`); the explicit-ENI case gives the primary
   ENI an Elastic IP for its base address too (pre-created ENIs disable
@@ -186,7 +191,8 @@ negative test is: point `--config` at a copy of `vm.yaml` with
   left the VM unreachable; `aws.py` calls back into `generate.py` for
   key merging/`open_ports` via a lazy import (`_core()`); AWS limits
   are `MAX_EXTERNAL_IPS = 5` (default EIP quota) and `MAX_NICS = 8`
-  (advisory only).
+  (advisory only). The GCP template must never gain a provider marker
+  — that would break the byte-identical rule.
 - **`vm.os` presets have not been applied to a real VM.** The deployed
   VM predates them and its config sets `vm.image` directly (a no-op
   path through the preset code — verified byte-identical render).

@@ -1,15 +1,16 @@
 # gcp-vm-plus-ansible
 
-Python generator that renders OpenTofu configuration for a VM on GCP
-(Rocky Linux 10 by default — see "Choosing the OS"): 64 GB+ RAM, 250 GB
-boot disk, SSH open to the internet, all other inbound ports closed
-unless listed in `network.open_ports` (the VM sits on its own VPC, and
-GCP VPCs deny ingress by default).
+Python generator that renders OpenTofu configuration for a VM on GCP or
+AWS (Rocky Linux 10 by default — see "Choosing the OS"): 64 GB+ RAM,
+250 GB boot disk, SSH open to the internet, all other inbound ports
+closed unless listed in `network.open_ports` (the VM sits on its own
+VPC, which denies ingress by default on either cloud).
 
 ## Layout
 
 ```
-config/examples/             committed config templates — copy them into
+config/examples/             committed config templates (vm.yaml for GCP,
+                             vm-aws.yaml for AWS) — copy them into
                              config/ and edit the copies
 config/vm.yaml               all tunable settings (project, zone, machine
                              type, disk, OS, SSH keys, external IP
@@ -18,14 +19,19 @@ config/vm.yaml               all tunable settings (project, zone, machine
 config/base_authorized_keys  initial public keys for the base login
                              (vm.ssh_user), one per line; local copy,
                              gitignored
-generator/generate.py        loads + validates the YAML, renders the template
-generator/providers/gcp.py   GCP-specific presets, guardrail inputs, checks
-generator/templates/gcp/main.tf.j2   OpenTofu HCL template (GCP)
+generator/generate.py        shared core: loads + validates the YAML, runs
+                             the guardrails, renders the selected
+                             provider's template
+generator/providers/         one module per cloud (gcp.py, aws.py):
+                             presets, RAM inference, provider-only checks
+generator/templates/gcp/     OpenTofu HCL template + policy-routing.sh (GCP)
+generator/templates/aws/     OpenTofu HCL template + policy-routing.sh (AWS)
 docs/                        design documents (multi-provider architecture)
 provisioning/                material that runs on the VM after apply:
                              setup0.sh (admin accounts), capture.sh
                              (state report), keys/ (public keys)
-build/                       generated main.tf lands here (gitignored)
+build/                       generated main.tf lands here (gitignored);
+                             AWS deploys conventionally use build-aws/
 ```
 
 ## Usage
@@ -41,6 +47,19 @@ tofu -chdir=build init
 tofu -chdir=build apply
 ```
 
+For AWS, start from the AWS example and name the output directory
+explicitly (see "Choosing the provider" for the current AWS status
+before running `apply`):
+
+```sh
+cp config/examples/vm-aws.yaml config/vm-aws.yaml
+# edit config/vm-aws.yaml: aws.region / availability_zone, a verified
+# vm.os preset, and at least one SSH key source
+.venv/bin/python generator/generate.py --config config/vm-aws.yaml --out build-aws
+tofu -chdir=build-aws init
+tofu -chdir=build-aws apply
+```
+
 Everything in `config/` except `examples/` is gitignored, so your real
 project ID, keys, and any extra configs (e.g. `vm2.yaml`) stay local —
 only the templates in `config/examples/` are committed.
@@ -51,41 +70,78 @@ less than `vm.min_memory_gb` (default 64) or the boot disk is under 250 GB.
 Outputs after `apply`: the VM's public IP (`public_ip`), the list of all
 external IPv4 addresses (`public_ips`), and a ready-to-paste `ssh` command.
 
+## Choosing the provider
+
+The optional top-level `provider:` key selects the cloud: `gcp` (the
+default when the key is absent — every config written before the key
+existed is a GCP config) or `aws`. Each provider owns one section of
+the config file — `gcp:` with `project_id`/`region`/`zone`, or `aws:`
+with `region`/`availability_zone` plus optional `profile` and
+`vpc_cidr`. Every other key keeps one name everywhere, but its value is
+written in the selected provider's vocabulary: `vm.machine_type` holds
+`n2-standard-16` on GCP and `m5.4xlarge` on AWS; `vm.boot_disk_type`
+holds `pd-balanced` or `gp3`. One config file describes one deployment
+on one provider.
+
+Each generated `main.tf` carries its provider in a header marker, and
+the generator refuses to render one provider's output into a directory
+whose existing `main.tf` names another (`--force` overrides) — an AWS
+run can never clobber the GCP `build/` directory by a forgotten
+`--out` flag.
+
+**AWS status: rendered and `tofu validate`-clean, but never deployed.**
+No AWS account has been contacted; the Rocky/AlmaLinux/CentOS/Fedora
+presets are refused as unverified (see the next section), and the
+first real deployment is pending credentials and a scratch account
+(phase 4 of `docs/multi-provider-implementation-plan.md`).
+
 ## Choosing the OS
 
 Set `vm.os` to one of the presets; it picks the boot image and the
 distro's conventional login name for `vm.ssh_user` (override by setting
-`ssh_user` yourself):
+`ssh_user` yourself). The preset names are the same on both providers;
+what they resolve to differs:
 
-| `vm.os` | image | default `ssh_user` |
-|---|---|---|
-| `rocky-10` (example default) | rocky-linux-cloud/rocky-linux-10 | `rocky` |
-| `rocky-9` | rocky-linux-cloud/rocky-linux-9 | `rocky` |
-| `almalinux-10` | almalinux-cloud/almalinux-10 | `almalinux` |
-| `almalinux-9` | almalinux-cloud/almalinux-9 | `almalinux` |
-| `centos-stream-10` | centos-cloud/centos-stream-10 | `centos` |
-| `centos-stream-9` | centos-cloud/centos-stream-9 | `centos` |
-| `fedora-44` | fedora-cloud/fedora-cloud-44-x86-64 | `fedora` |
-| `fedora-43` | fedora-cloud/fedora-cloud-43-x86-64 | `fedora` |
-| `ubuntu-24.04` | ubuntu-os-cloud/ubuntu-2404-lts-amd64 | `ubuntu` |
-| `ubuntu-22.04` | ubuntu-os-cloud/ubuntu-2204-lts | `ubuntu` |
-| `debian-13` | debian-cloud/debian-13 | `debian` |
-| `debian-12` | debian-cloud/debian-12 | `debian` |
+| `vm.os` | GCP image (project/family) | AWS image lookup | default `ssh_user` (GCP / AWS) |
+|---|---|---|---|
+| `rocky-10` (example default) | rocky-linux-cloud/rocky-linux-10 | name filter `Rocky-10-EC2-Base-*x86_64` ¹ | `rocky` |
+| `rocky-9` | rocky-linux-cloud/rocky-linux-9 | name filter `Rocky-9-EC2-Base-*x86_64` ¹ | `rocky` |
+| `almalinux-10` | almalinux-cloud/almalinux-10 | name filter `AlmaLinux-OS-10-*x86_64*` ¹ | `almalinux` / `ec2-user` ² |
+| `almalinux-9` | almalinux-cloud/almalinux-9 | name filter `AlmaLinux-OS-9-*x86_64*` ¹ | `almalinux` / `ec2-user` ² |
+| `centos-stream-10` | centos-cloud/centos-stream-10 | name filter `CentOS-Stream-10-*x86_64*` ¹ | `centos` ² |
+| `centos-stream-9` | centos-cloud/centos-stream-9 | name filter `CentOS-Stream-9-*x86_64*` ¹ | `centos` ² |
+| `fedora-44` | fedora-cloud/fedora-cloud-44-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-44-*` ¹ | `fedora` ² |
+| `fedora-43` | fedora-cloud/fedora-cloud-43-x86-64 | name filter `Fedora-Cloud-Base-AmazonEC2.x86_64-43-*` ¹ | `fedora` ² |
+| `ubuntu-24.04` | ubuntu-os-cloud/ubuntu-2404-lts-amd64 | SSM `/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id` | `ubuntu` |
+| `ubuntu-22.04` | ubuntu-os-cloud/ubuntu-2204-lts | SSM `.../server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id` | `ubuntu` |
+| `debian-13` | debian-cloud/debian-13 | SSM `/aws/service/debian/release/13/latest/amd64` | `debian` / `admin` |
+| `debian-12` | debian-cloud/debian-12 | SSM `/aws/service/debian/release/12/latest/amd64` | `debian` / `admin` |
+| `amazon-linux-2023` | — (AWS only; no GCP images exist) | SSM `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | `ec2-user` |
 
-For any other GCP public image, drop `vm.os` and set `vm.image.project`
-+ `vm.image.family` (plus `vm.ssh_user`) directly — `vm.os` and
-`vm.image` are mutually exclusive. Find families with
-`gcloud compute images list`. The RAM/disk guardrails apply either way,
-and everything else (firewall, extra IPs, NICs, provisioning) is
-distro-independent.
+¹ **Unverified AWS preset**: the AMI owner ID is a placeholder that the
+generator refuses with a pointer to the design doc's open questions
+(§9) until it is verified against the real AWS API — so these presets
+cannot be deployed yet. Once verified, the first `apply` with a
+Marketplace AMI additionally requires accepting the product's AWS
+Marketplace subscription in the console (one time per account).
 
-Two caveats. The Fedora images are published by the Fedora project
+² Where the clouds differ, the value is GCP / AWS; the AWS login users
+for almalinux, centos-stream, and fedora are unconfirmed (§9).
+
+For any other image, drop `vm.os` and set `vm.image` directly (the two
+are mutually exclusive). On GCP: `vm.image.project` +
+`vm.image.family` (find families with `gcloud compute images list`).
+On AWS, exactly one of three shapes: `{ami_id: ami-...}`,
+`{ssm_parameter: /aws/service/...}`, or `{ami_owner: ...,
+ami_name_filter: ...}` — plus `vm.ssh_user`. The RAM/disk guardrails
+apply either way, and everything else (firewall, extra IPs, NICs,
+provisioning) is distro-independent.
+
+One GCP caveat: the Fedora images are published by the Fedora project
 rather than by Google, and it has not been verified that they ship the
 google-guest-agent — SSH keys will land at first boot either way (via
 cloud-init), but in-place key updates and the automatic routes for
-extra forwarded IPs depend on the agent. And Amazon Linux exists only
-on AWS, so it has no preset here; it appears in the AWS preset table of
-the multi-provider design (`docs/multi-provider-design.md`).
+extra forwarded IPs depend on the agent.
 
 ## Opening extra ports
 
@@ -98,13 +154,16 @@ network:
 ```
 
 Each entry is a single port, a `"low-high"` range, or either with a
-`tcp:`/`udp:` prefix — plain entries are TCP. The generator renders one
-extra firewall rule (`<network>-allow-public`) with source
-`0.0.0.0/0`; these ports are always world-reachable, unlike SSH, whose
-sources are governed separately by `network.ssh_source_ranges`. The
-rule targets the VM's tag, so it covers every external IP
-(`vm.external_ip_count`) and every NIC (`vm.nic_count`). An empty or
-absent list renders no extra rule, leaving SSH as the only open port.
+`tcp:`/`udp:` prefix — plain entries are TCP. On GCP the generator
+renders one extra firewall rule (`<network>-allow-public`) with source
+`0.0.0.0/0`; on AWS each entry becomes one security-group ingress rule
+(with the range split into `from_port`/`to_port`), same source. These
+ports are always world-reachable, unlike SSH, whose sources are
+governed separately by `network.ssh_source_ranges`. The rule targets
+the VM (GCP tag / the ENIs' security group), so it covers every
+external IP (`vm.external_ip_count`) and every NIC (`vm.nic_count`).
+An empty or absent list renders no extra rule, leaving SSH as the only
+open port.
 
 Set `vm.external_ip_count` (1–8, default 1) to give the VM more than one
 external IPv4 address. The first address is the NIC's ephemeral IP, as
@@ -120,6 +179,19 @@ Note these forwarded addresses do **not** appear as interfaces in
 `ip a` on the VM — they land on the one NIC. If you want actual extra
 NICs, use `vm.nic_count` instead (next section); the two knobs are
 independent and can be combined.
+
+On AWS the same knob (1–5 there) works differently: each extra address
+is a secondary private IP on the primary network interface with an
+Elastic IP associated to it, and a small systemd unit installed via
+`user_data` configures the secondary addresses inside the guest at each
+boot (stock AMIs configure only the primary address). Two practical
+differences: fresh AWS accounts are limited to 5 Elastic IPs per region
+(a quota increase lifts it), and since February 2024 AWS bills *every*
+public IPv4 address at about $0.005/hour (~$3.60/month), attached or
+not. Also note that whenever the AWS template uses explicit network
+interfaces (`nic_count` > 1 or `external_ip_count` > 1), even the
+primary interface's base address is an Elastic IP, because attaching
+pre-created ENIs disables the subnet's auto-assign-public-IP.
 
 ## Multiple NICs
 
@@ -141,6 +213,15 @@ switch) — use it for new VMs, not the deployed one; and GCP allows at
 most one vNIC per vCPU (the generator checks this when it can parse
 the machine type).
 
+On AWS the same knob creates one `aws_network_interface` per NIC, each
+in its own `10.10.<i>.0/24` subnet within the single configured
+availability zone, and each secondary ENI gets its own Elastic IP
+(secondary ENIs receive no automatic public IP). The same
+policy-routing script runs, with its metadata queries translated to
+IMDSv2 (`generator/templates/aws/policy-routing.sh`). AWS ENI limits
+depend on the instance type with no simple rule, so the generator
+prints an advisory instead of enforcing a bound.
+
 ## Running a second VM
 
 The generator takes `--config` and `--out`, and each output directory
@@ -154,38 +235,44 @@ cp config/vm.yaml config/vm2.yaml
 tofu -chdir=build2 init && tofu -chdir=build2 apply
 ```
 
-## Multiple providers (design)
+## How using each provider differs
 
-The generator currently targets GCP only. An architecture for adding AWS
-as an alternate provider is fully specified in
-[`docs/multi-provider-design.md`](docs/multi-provider-design.md) and is
-being landed phase by phase per
-[`docs/multi-provider-implementation-plan.md`](docs/multi-provider-implementation-plan.md).
-Landed so far: the phase-1 refactor (GCP-specific code in
-`generator/providers/gcp.py`, the GCP template in
-`generator/templates/gcp/`, byte-identical output); phase 2 — the
-optional `provider:` key is parsed (absent means `gcp`), the AWS
-example config is committed at `config/examples/vm-aws.yaml`, and the
-generator refuses to overwrite a `main.tf` that was generated for a
-different provider (`--force` overrides); and phase 3 — `provider:
-aws` configs render real HCL from `generator/templates/aws/` that
-passes `tofu fmt -check` / `init -backend=false` / `validate`, with
-the same guardrails (RAM/disk floors, default-deny network, merged
-SSH keys) enforced in shared code.
+The workflows are deliberately parallel (the architecture and its
+rationale live in
+[`docs/multi-provider-design.md`](docs/multi-provider-design.md)):
 
-**AWS has never been deployed** — no AWS account has been contacted;
-the HCL is only validated offline. Until phase 4 verifies them against
-the real APIs, the Rocky/AlmaLinux/CentOS-Stream/Fedora presets carry
-placeholder AMI owner IDs that the generator refuses with a pointer to
-the design doc's open questions (so the committed `vm-aws.yaml`
-example, which uses `rocky-10`, does not render yet — switch `vm.os`
-to an SSM-backed preset like `ubuntu-24.04` to try it). Two behavioral
-differences to know before deploying: changing SSH keys on AWS
-**replaces the instance** (keys ride in `user_data`, with
-`user_data_replace_on_change = true`), and every public IPv4 address
-is an Elastic IP, billed ~$3.60/month each even when unattached.
-Existing GCP configs and workflows are unchanged (a config without a
-`provider:` key is a GCP config by definition).
+| Step | GCP | AWS |
+|---|---|---|
+| One-time auth | `gcloud auth login` + `gcloud auth application-default login` | `aws configure` or an SSO profile; the standard credential chain |
+| One-time account prep | enable `compute.googleapis.com` | accept the Marketplace subscription if using a Rocky/Alma preset (once verified) |
+| Copy the example | `cp config/examples/vm.yaml config/vm.yaml` | `cp config/examples/vm-aws.yaml config/vm-aws.yaml` |
+| Generate | `.venv/bin/python generator/generate.py` | `.venv/bin/python generator/generate.py --config config/vm-aws.yaml --out build-aws` |
+| Verify (offline) | `tofu -chdir=build fmt -check && tofu -chdir=build init -backend=false -input=false && tofu -chdir=build validate` | the same three commands with `-chdir=build-aws` |
+| Deploy | `tofu -chdir=build init && tofu -chdir=build apply` | the same with `-chdir=build-aws` |
+| Second VM | `cp config/vm.yaml config/vm2.yaml`, generate with `--out build2` | `cp config/vm-aws.yaml config/vm-aws2.yaml`, generate with `--out build-aws2` |
+| Provision accounts | `scp -r provisioning <ssh_user>@IP:` then run `setup0.sh` | identical — `setup0.sh` is distro- and cloud-agnostic |
+| Rotate base-login keys | edit keys, regenerate, `apply`; the running VM is updated in place | edit keys, regenerate, `apply`; the instance is **replaced** (a `user_data` change with `user_data_replace_on_change = true`) — review the plan before applying |
+
+Behavioral differences worth remembering:
+
+- **Key rotation**: in place on GCP; replaces the instance on AWS (or
+  edit `authorized_keys` on the VM by hand).
+- **Extra external IPs**: GCP forwarding rules, with routes installed
+  by the guest agent; AWS Elastic IPs on secondary private addresses,
+  configured in the guest by a `user_data`-installed unit.
+- **The default `build/` directory** holds the deployed GCP VM's
+  configuration and state — AWS runs always name their own `--config`
+  and `--out` (the provider marker in each generated `main.tf` makes a
+  mix-up a clean error rather than a clobber).
+- **Image freshness**: a GCP image family resolves to the newest
+  release at apply time; on AWS the SSM parameter resolves at apply
+  time and the Marketplace name filter picks the newest matching AMI.
+- **Public IPv4 cost**: GCP bills in-use external addresses at a small
+  hourly rate; AWS bills every public IPv4 address (~$0.005/hour)
+  whether or not it is attached.
+
+Teardown is symmetric: `tofu -chdir=<dir> destroy` removes everything
+the corresponding apply created, on either provider.
 
 ## SSH keys for the base login
 
@@ -199,9 +286,12 @@ one key is required):
 - `vm.ssh_public_key_file` — a single-key file
 - `vm.ssh_public_key` — a key pasted inline
 
-They are injected via the instance's `ssh-keys` metadata, so re-running
-the generator and `tofu apply` after editing keys updates the VM in
-place.
+On GCP they are injected via the instance's `ssh-keys` metadata, so
+re-running the generator and `tofu apply` after editing keys updates
+the VM in place. On AWS they ride in the cloud-init `user_data` script
+(which writes `authorized_keys` for `vm.ssh_user`, creating the user if
+the AMI has no such account), so changing keys **replaces the
+instance**.
 
 Note: OpenTofu state is local (`build/terraform.tfstate`, gitignored) —
 there is no remote backend, so the machine that ran `apply` owns the
@@ -262,7 +352,12 @@ every `vm.os` preset. Reports can contain sensitive operational detail
 (IPs, usernames, sockets) even with secrets withheld — treat saved
 reports as private and keep them out of the repo.
 
-## Google Cloud authentication
+## Authentication
+
+Credentials never appear in the YAML or the rendered HCL, on either
+provider.
+
+### GCP
 
 OpenTofu's `google` provider authenticates with **Application Default
 Credentials (ADC)**. Two things that don't work: GCP "API keys" (they
@@ -299,3 +394,15 @@ the provider block.
 For CI or automation, use a service account key instead: point the
 `GOOGLE_APPLICATION_CREDENTIALS` environment variable at the key's JSON
 file, and never commit that file.
+
+### AWS
+
+The `aws` provider uses the standard AWS credential chain: the
+`AWS_PROFILE` environment variable, `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`, or `~/.aws/credentials` (written by
+`aws configure`, or `aws login` for SSO). Set the optional
+`aws.profile` key in the config to pin a named profile into the
+provider block. One-time account prep: if you use a Rocky or AlmaLinux
+preset (once their owner IDs are verified — see "Choosing the OS"),
+accept the product's AWS Marketplace subscription in the console
+first; the initial apply fails without it.
