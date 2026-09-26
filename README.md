@@ -62,6 +62,10 @@ distro's conventional login name for `vm.ssh_user` (override by setting
 | `rocky-9` | rocky-linux-cloud/rocky-linux-9 | `rocky` |
 | `almalinux-10` | almalinux-cloud/almalinux-10 | `almalinux` |
 | `almalinux-9` | almalinux-cloud/almalinux-9 | `almalinux` |
+| `centos-stream-10` | centos-cloud/centos-stream-10 | `centos` |
+| `centos-stream-9` | centos-cloud/centos-stream-9 | `centos` |
+| `fedora-44` | fedora-cloud/fedora-cloud-44-x86-64 | `fedora` |
+| `fedora-43` | fedora-cloud/fedora-cloud-43-x86-64 | `fedora` |
 | `ubuntu-24.04` | ubuntu-os-cloud/ubuntu-2404-lts-amd64 | `ubuntu` |
 | `ubuntu-22.04` | ubuntu-os-cloud/ubuntu-2204-lts | `ubuntu` |
 | `debian-13` | debian-cloud/debian-13 | `debian` |
@@ -73,6 +77,14 @@ For any other GCP public image, drop `vm.os` and set `vm.image.project`
 `gcloud compute images list`. The RAM/disk guardrails apply either way,
 and everything else (firewall, extra IPs, NICs, provisioning) is
 distro-independent.
+
+Two caveats. The Fedora images are published by the Fedora project
+rather than by Google, and it has not been verified that they ship the
+google-guest-agent — SSH keys will land at first boot either way (via
+cloud-init), but in-place key updates and the automatic routes for
+extra forwarded IPs depend on the agent. And Amazon Linux exists only
+on AWS, so it has no preset here; it appears in the AWS preset table of
+the multi-provider design (`docs/multi-provider-design.md`).
 
 ## Opening extra ports
 

@@ -549,9 +549,14 @@ chmod 600 "$home/.ssh/authorized_keys" && chown "$user:$user" "$home/.ssh/author
 
 ## 5. OS presets on AWS
 
-The preset names — `rocky-10`, `ubuntu-24.04`, and so on — are the same
-on both providers; only what they resolve to differs. On AWS a preset
-resolves in one of two ways. Ubuntu and Debian publish the ID of their
+The preset names — `rocky-10`, `ubuntu-24.04`, and so on — mean the
+same thing on both providers; only what they resolve to differs. The
+*set* of presets, however, is owned by each provider module, because
+availability differs: Amazon Linux exists only on AWS, and a distro
+could in principle stop publishing images for one cloud. Asking for a
+preset the selected provider does not offer produces the existing
+"unknown vm.os" error, which lists that provider's valid presets. On
+AWS a preset resolves in one of two ways. Ubuntu and Debian publish the ID of their
 latest AMI in public SSM parameters, which the template can read with a
 `data "aws_ssm_parameter"` block; the parameter always holds the
 current release, and reading it requires no account setup. Rocky and
@@ -564,8 +569,11 @@ the vendor's owner ID and a name pattern and picks the newest match.
 | `ubuntu-24.04` | SSM `/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id` | `ubuntu` |
 | `ubuntu-22.04` | SSM `/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id` | `ubuntu` |
 | `debian-13` / `debian-12` | SSM `/aws/service/debian/release/<13\|12>/latest/amd64` | `admin` |
+| `amazon-linux-2023` — AWS only, no GCP images exist | SSM `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | `ec2-user` |
 | `rocky-10` / `rocky-9` | `data.aws_ami`: official Rocky owner + name filter `Rocky-<10\|9>-EC2-Base-*x86_64` | `rocky` |
 | `almalinux-10` / `almalinux-9` | `data.aws_ami`: official Alma owner + name filter | `ec2-user` (unconfirmed — §9 item 2) |
+| `centos-stream-10` / `centos-stream-9` | `data.aws_ami`: official CentOS owner + name filter | `centos` (unconfirmed — §9 item 2) |
+| `fedora-44` / `fedora-43` | `data.aws_ami`: Fedora project owner + name filter | `fedora` (unconfirmed — §9 item 2) |
 
 The Marketplace route has a wrinkle with no GCP equivalent, and the
 README must say so prominently once this is implemented: the first
@@ -675,11 +683,15 @@ VM's `config/vm.yaml` renders a byte-identical `build/main.tf`, and
 
 ## 9. Open questions, to be resolved before the phase noted
 
-1. The exact SSM parameter paths for Ubuntu 24.04/22.04 and Debian
-   12/13, and whether Debian 13 is published there yet (phase 3).
-2. Rocky and Alma Marketplace AMI owner IDs, name-filter patterns, and
-   default login users — `rocky` is assumed for Rocky, `ec2-user` for
-   Alma is unconfirmed — plus the exact text of the
+1. The exact SSM parameter paths for Ubuntu 24.04/22.04, Debian 12/13,
+   and Amazon Linux 2023, and whether Debian 13 is published there yet
+   (phase 3).
+2. AMI owner IDs, name-filter patterns, and default login users for
+   Rocky, Alma, CentOS Stream, and Fedora — `rocky` is assumed for
+   Rocky; `ec2-user` (Alma), `centos`, and `fedora` are unconfirmed —
+   plus which of these require a Marketplace subscription (CentOS and
+   Fedora publish plain community AMIs, which would skip the
+   subscription-acceptance step) and the exact text of the
    subscription-not-accepted failure (phases 3–4).
 3. ENI and secondary-IP limits for the recommended instance types
    (m5.4xlarge is believed to allow 8 ENIs and 30 addresses per ENI),

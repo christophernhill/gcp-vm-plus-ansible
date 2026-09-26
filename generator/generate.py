@@ -19,14 +19,18 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 # vm.os presets: image project, image family, default ssh_user. For any
 # GCP public image not listed here, set vm.image + vm.ssh_user instead.
 OS_PRESETS = {
-    "rocky-10":     ("rocky-linux-cloud", "rocky-linux-10", "rocky"),
-    "rocky-9":      ("rocky-linux-cloud", "rocky-linux-9", "rocky"),
-    "almalinux-10": ("almalinux-cloud", "almalinux-10", "almalinux"),
-    "almalinux-9":  ("almalinux-cloud", "almalinux-9", "almalinux"),
-    "ubuntu-24.04": ("ubuntu-os-cloud", "ubuntu-2404-lts-amd64", "ubuntu"),
-    "ubuntu-22.04": ("ubuntu-os-cloud", "ubuntu-2204-lts", "ubuntu"),
-    "debian-13":    ("debian-cloud", "debian-13", "debian"),
-    "debian-12":    ("debian-cloud", "debian-12", "debian"),
+    "rocky-10":         ("rocky-linux-cloud", "rocky-linux-10", "rocky"),
+    "rocky-9":          ("rocky-linux-cloud", "rocky-linux-9", "rocky"),
+    "almalinux-10":     ("almalinux-cloud", "almalinux-10", "almalinux"),
+    "almalinux-9":      ("almalinux-cloud", "almalinux-9", "almalinux"),
+    "centos-stream-10": ("centos-cloud", "centos-stream-10", "centos"),
+    "centos-stream-9":  ("centos-cloud", "centos-stream-9", "centos"),
+    "fedora-44":        ("fedora-cloud", "fedora-cloud-44-x86-64", "fedora"),
+    "fedora-43":        ("fedora-cloud", "fedora-cloud-43-x86-64", "fedora"),
+    "ubuntu-24.04":     ("ubuntu-os-cloud", "ubuntu-2404-lts-amd64", "ubuntu"),
+    "ubuntu-22.04":     ("ubuntu-os-cloud", "ubuntu-2204-lts", "ubuntu"),
+    "debian-13":        ("debian-cloud", "debian-13", "debian"),
+    "debian-12":        ("debian-cloud", "debian-12", "debian"),
 }
 
 # GB of RAM per vCPU for the common predefined machine-type families.

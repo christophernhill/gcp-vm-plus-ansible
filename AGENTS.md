@@ -56,9 +56,14 @@ with `tofu`.
   inferred RAM is below `vm.min_memory_gb` (default 64); it only warns
   for names it can't parse. Disk has a hard 250 GB floor.
 - **The base OS is a `vm.os` preset** (rocky-10/9, almalinux-10/9,
-  ubuntu-24.04/22.04, debian-13/12; table `OS_PRESETS` in
-  `generate.py`, all family names verified against the live GCP API
-  2026-09-25). A preset expands to `vm.image` + a default `vm.ssh_user`
+  centos-stream-10/9, fedora-44/43, ubuntu-24.04/22.04, debian-13/12;
+  table `OS_PRESETS` in `generate.py`, all family names verified
+  against the live GCP API — rocky/alma/ubuntu/debian on 2026-09-25,
+  centos/fedora on 2026-09-26). Fedora's images are community-published
+  (`fedora-cloud` project); whether they ship google-guest-agent is
+  unverified, so in-place key updates and forwarded-IP routes are
+  unconfirmed there. Amazon Linux is AWS-only and appears solely in the
+  multi-provider design doc. A preset expands to `vm.image` + a default `vm.ssh_user`
   (the distro's conventional login); an explicit `ssh_user` overrides
   the default, and `vm.os` + `vm.image` together is an error. For
   unlisted images, set `vm.image.project`/`family` directly — with
