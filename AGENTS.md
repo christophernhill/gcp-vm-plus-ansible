@@ -27,6 +27,7 @@ with `tofu`.
 | `config/base_authorized_keys` | Initial public keys for the base login (`vm.ssh_user`), one per line. Local copy — gitignored |
 | `generator/generate.py` | Loads + validates YAML, renders the template |
 | `docs/multi-provider-design.md` | Design (not implemented) for AWS as an alternate provider |
+| `docs/multi-provider-implementation-plan.md` | Phase-by-phase execution plan for that design, written for an implementing agent |
 | `generator/templates/main.tf.j2` | OpenTofu HCL template |
 | `generator/templates/policy-routing.sh` | Startup script injected when `vm.nic_count` > 1 (reply routing for secondary NICs) |
 | `provisioning/` | Runs on the VM after apply: `setup0.sh` creates admin accounts (sudo, SSH-key-only); `capture.sh` prints a read-only state report; `keys/` holds users' public keys |
